@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Creating the GitHub release needs write access to the repository's contents.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
