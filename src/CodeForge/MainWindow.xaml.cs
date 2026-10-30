@@ -241,7 +241,7 @@ public partial class MainWindow : Window
             foreach (var file in files.Where(File.Exists)) OpenPath(file);
             if (selected != null && documents.FirstOrDefault(d => SamePath(d.Path, selected)) is { } document) Select(document);
         }
-        UpdateChrome();
+        DocumentSelected();   // the Start Page when nothing was reopened
         if (settings.CheckForUpdates && Environment.GetEnvironmentVariable("CF_SNAPSHOT") == null && DateTime.UtcNow - settings.LastUpdateCheck > TimeSpan.FromDays(1))
             _ = Updater.CheckAsync(this, userInitiated: false);
     }

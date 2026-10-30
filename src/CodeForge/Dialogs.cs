@@ -117,8 +117,9 @@ public static class NewProjectWindow
 {
     public static (ProjectTemplate Template, string Name, string Location)? Pick(Window owner)
     {
-        var window = DialogKit.Make(owner, "Create a new project", 820, 580);
-        var list = new ListBox { Height = 360 };
+        var window = DialogKit.Make(owner, "Create a new project", 820, 600);
+        window.SizeToContent = SizeToContent.Height;
+        var list = new ListBox { Height = 330 };
         string? lastGroup = null;
         foreach (var template in ProjectTemplates.All)
         {
