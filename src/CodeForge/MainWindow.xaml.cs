@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using CodeForge.Core;
+using CodeForge.Designer;
 using Microsoft.Win32;
 
 namespace CodeForge;
@@ -14,6 +15,9 @@ namespace CodeForge;
 public partial class MainWindow : Window
 {
     private readonly List<EditorDocument> documents = [];
+    /// <summary>Forms open in the Windows Forms designer ("Form1.vb [Design]").</summary>
+    private readonly List<DesignerDocument> designers = [];
+    private readonly PropertiesPane properties = new();
     private readonly Runner runner = new();
     private readonly Terminal terminal;
     private readonly Settings settings = Settings.Current;
@@ -27,12 +31,15 @@ public partial class MainWindow : Window
 
     public string? Workspace => workspace;
     public EditorDocument? Current => (DocumentTabs.SelectedItem as TabItem)?.Tag as EditorDocument;
+    public DesignerDocument? CurrentDesigner => (DocumentTabs.SelectedItem as TabItem)?.Tag as DesignerDocument;
+    private int OpenTabs => documents.Count + designers.Count;
     private BuildConfiguration Configuration => settings.Configuration == "Release" ? BuildConfiguration.Release : BuildConfiguration.Debug;
 
     public MainWindow()
     {
         InitializeComponent();
         terminal = new Terminal(TerminalText, TerminalInput, TerminalPrompt);
+        PropertiesHost.Child = properties;
         BuildMenu();
         WireControls();
         RestoreLayout();
@@ -63,6 +70,7 @@ public partial class MainWindow : Window
         Separator Line() => new();
         bool HasFolder() => workspace != null;
         bool HasDocument() => Current != null;
+        bool HasTab() => Current != null || CurrentDesigner != null;
 
         Menu("_File",
             Item("New _Project…", NewProject, "Ctrl+Shift+N"),
@@ -72,18 +80,18 @@ public partial class MainWindow : Window
             Item("Open _Folder…", OpenFolder, "Ctrl+Shift+O"),
             Item("Clone _Repository…", CloneRepository),
             Line(),
-            Item("_Save", () => Save(Current), "Ctrl+S", HasDocument),
+            Item("_Save", SaveCurrent, "Ctrl+S", HasTab),
             Item("Save _As…", () => SaveAs(Current), "", HasDocument),
             Item("Save A_ll", SaveAll, "Ctrl+Shift+S"),
             Line(),
-            Item("_Close", () => { if (Current is { } d) CloseDocument(d); }, "Ctrl+F4", HasDocument),
+            Item("_Close", CloseCurrent, "Ctrl+F4", HasTab),
             Item("Close Fol_der", () => SetWorkspace(null), "", HasFolder),
             Line(),
             Item("E_xit", Close, "Alt+F4"));
 
         Menu("_Edit",
-            Item("_Undo", () => Current?.Editor.Undo(), "", HasDocument),
-            Item("_Redo", () => Current?.Editor.Redo(), "", HasDocument),
+            Item("_Undo", Undo, "", HasTab),
+            Item("_Redo", Redo, "", HasTab),
             Line(),
             Item("_Find…", () => ShowFind(), "", HasDocument),
             Item("_Go To Line…", GoToLine, "Ctrl+G", HasDocument),
@@ -93,7 +101,11 @@ public partial class MainWindow : Window
             Item("_Duplicate Line", DuplicateLine, "Ctrl+D", HasDocument));
 
         Menu("_View",
+            Item("_Code", ViewCode, "F7", () => CurrentDesigner != null || (Current?.Path is { } p && IsForm(p))),
+            Item("_Designer", ViewDesigner, "Shift+F7", () => Current?.Path is { } p && IsForm(p)),
+            Line(),
             Item("Solution _Explorer", () => SetPane(ExplorerPane, true), "Ctrl+Alt+L"),
+            Item("_Properties Window", () => SetPane(ExplorerPane, true), "F4"),
             Item("Tool_box", () => SetPane(ToolboxPane, true), "Ctrl+Alt+X"),
             Item("_Output", () => ShowPanel(OutputTab), "Ctrl+Alt+O"),
             Item("Error L_ist", () => ShowPanel(ErrorsTab), "Ctrl+Alt+E"),
@@ -152,8 +164,8 @@ public partial class MainWindow : Window
         NewProjectButton.Click += (_, _) => NewProject();
         OpenButton.Click += (_, _) => OpenFolder();
         SaveAllButton.Click += (_, _) => SaveAll();
-        UndoButton.Click += (_, _) => Current?.Editor.Undo();
-        RedoButton.Click += (_, _) => Current?.Editor.Redo();
+        UndoButton.Click += (_, _) => Undo();
+        RedoButton.Click += (_, _) => Redo();
         StartButton.Click += (_, _) => Start();
         StopButton.Click += (_, _) => runner.Stop();
         BuildButton.Click += (_, _) => Build();
@@ -198,7 +210,7 @@ public partial class MainWindow : Window
         {
             if (ExplorerTree.SelectedItem is TreeViewItem { Tag: string path } && File.Exists(path))
             {
-                OpenPath(path);
+                if (IsForm(path)) OpenDesigner(path); else OpenPath(path);
                 e.Handled = true;
             }
         };
@@ -211,12 +223,23 @@ public partial class MainWindow : Window
         };
 
         ToolboxSearch.TextChanged += (_, _) => UpdateToolbox();
-        ToolboxTree.MouseDoubleClick += (_, _) => { if (ToolboxTree.SelectedItem is TreeViewItem { Tag: ToolboxItem item }) InsertToolboxItem(item); };
+        ToolboxTree.MouseDoubleClick += (_, _) =>
+        {
+            if (ToolboxTree.SelectedItem is TreeViewItem { Tag: ToolboxItem item }) InsertToolboxItem(item);
+            if (ToolboxTree.SelectedItem is TreeViewItem { Tag: ControlKind kind } && CurrentDesigner is { } designer) designer.Surface.PlaceDefault(kind);
+        };
+        ToolboxTree.SelectedItemChanged += (_, _) =>
+        {
+            // In the designer, picking a control arms it: the next click on the form places one (Pointer disarms).
+            if (CurrentDesigner is { } designer) designer.Surface.ArmedTool = (ToolboxTree.SelectedItem as TreeViewItem)?.Tag as ControlKind;
+        };
         ToolboxTree.PreviewMouseMove += (_, e) =>
         {
-            if (e.LeftButton != MouseButtonState.Pressed || ToolboxTree.SelectedItem is not TreeViewItem { Tag: ToolboxItem item }) return;
-            var indent = "";
-            DragDrop.DoDragDrop(ToolboxTree, item.Expanded(indent).Text, DragDropEffects.Copy);
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+            if (ToolboxTree.SelectedItem is TreeViewItem { Tag: ToolboxItem item })
+                DragDrop.DoDragDrop(ToolboxTree, item.Expanded("").Text, DragDropEffects.Copy);
+            else if (ToolboxTree.SelectedItem is TreeViewItem { Tag: ControlKind kind })
+                DragDrop.DoDragDrop(ToolboxTree, new DataObject(DesignSurface.ToolboxFormat, kind.Name), DragDropEffects.Copy);
         };
     }
 
@@ -238,8 +261,13 @@ public partial class MainWindow : Window
             var files = settings.OpenFiles.ToList();
             var selected = settings.SelectedFile;
             if (settings.Workspace is { } folder && Directory.Exists(folder)) SetWorkspace(folder);
-            foreach (var file in files.Where(File.Exists)) OpenPath(file);
-            if (selected != null && documents.FirstOrDefault(d => SamePath(d.Path, selected)) is { } document) Select(document);
+            foreach (var file in files)
+            {
+                if (file.StartsWith("design:") && File.Exists(file[7..])) OpenDesigner(file[7..]);
+                else if (File.Exists(file)) OpenPath(file);
+            }
+            if (selected?.StartsWith("design:") == true && designers.FirstOrDefault(d => SamePath(d.CodePath, selected[7..])) is { } form) SelectTab(form);
+            else if (selected != null && documents.FirstOrDefault(d => SamePath(d.Path, selected)) is { } document) Select(document);
         }
         DocumentSelected();   // the Start Page when nothing was reopened
         if (settings.CheckForUpdates && Environment.GetEnvironmentVariable("CF_SNAPSHOT") == null && DateTime.UtcNow - settings.LastUpdateCheck > TimeSpan.FromDays(1))
@@ -249,8 +277,8 @@ public partial class MainWindow : Window
     private void SaveSession()
     {
         settings.Workspace = workspace;
-        settings.OpenFiles = documents.Where(d => d.Path != null).Select(d => d.Path!).ToList();
-        settings.SelectedFile = Current?.Path;
+        settings.OpenFiles = documents.Where(d => d.Path != null).Select(d => d.Path!).Concat(designers.Select(d => "design:" + d.CodePath)).ToList();
+        settings.SelectedFile = Current?.Path ?? (CurrentDesigner != null ? "design:" + CurrentDesigner.CodePath : null);
         settings.WindowMaximized = WindowState == WindowState.Maximized;
         if (WindowState == WindowState.Normal) settings.WindowBounds = [Left, Top, Width, Height];
         if (ToolboxPane.Visibility == Visibility.Visible) settings.ToolboxWidth = ToolboxColumn.ActualWidth;
@@ -408,6 +436,11 @@ public partial class MainWindow : Window
         var menu = new ContextMenu();
         void Add(string header, Action action) => menu.Items.Add(new MenuItem { Header = header, Command = new RelayCommand(action) });
         if (!isFolder) Add("Open", () => OpenPath(path));
+        if (!isFolder && IsForm(path))
+        {
+            Add("View Designer", () => OpenDesigner(path));
+            Add("View Code", () => OpenPath(path));
+        }
         if (isFolder)
         {
             Add("New File…", () => CreateInExplorer(false, path));
@@ -525,21 +558,30 @@ public partial class MainWindow : Window
 
     private void UpdateTab(EditorDocument document)
     {
-        var tab = TabFor(document);
-        if (tab == null) return;
-        var title = new TextBlock { Text = document.DisplayName + (document.IsDirty ? " ●" : ""), VerticalAlignment = VerticalAlignment.Center };
+        if (TabFor(document) is { } tab) tab.Header = TabHeader(document.DisplayName, document.IsDirty, document.Path, () => CloseDocument(document));
+    }
+
+    private void UpdateTab(DesignerDocument designer)
+    {
+        if (DocumentTabs.Items.OfType<TabItem>().FirstOrDefault(t => t.Tag == designer) is { } tab)
+            tab.Header = TabHeader(designer.DisplayName, designer.IsDirty, designer.DesignerPath, () => CloseDesigner(designer));
+    }
+
+    private static StackPanel TabHeader(string name, bool dirty, string? path, Action onClose)
+    {
+        var title = new TextBlock { Text = name + (dirty ? " ●" : ""), VerticalAlignment = VerticalAlignment.Center };
         var close = new Button
         {
             Content = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 9,
             Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(8, 0, 0, 0), MinWidth = 0, MinHeight = 0,
             Background = Brushes.Transparent, BorderThickness = new Thickness(0), ToolTip = "Close (Ctrl+F4)",
         };
-        close.Click += (_, _) => CloseDocument(document);
-        var header = new StackPanel { Orientation = Orientation.Horizontal, ToolTip = document.Path };
+        close.Click += (_, _) => onClose();
+        var header = new StackPanel { Orientation = Orientation.Horizontal, ToolTip = path };
         header.Children.Add(title);
         header.Children.Add(close);
-        header.MouseDown += (_, e) => { if (e.ChangedButton == MouseButton.Middle) CloseDocument(document); };
-        tab.Header = header;
+        header.MouseDown += (_, e) => { if (e.ChangedButton == MouseButton.Middle) onClose(); };
+        return header;
     }
 
     private TabItem? TabFor(EditorDocument document) => DocumentTabs.Items.OfType<TabItem>().FirstOrDefault(t => t.Tag == document);
@@ -552,10 +594,16 @@ public partial class MainWindow : Window
 
     private void DocumentSelected()
     {
-        StartPage.Visibility = documents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        DocumentTabs.Visibility = documents.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        if (documents.Count == 0) StartPageView.Fill(StartPage, this);
+        StartPage.Visibility = OpenTabs == 0 ? Visibility.Visible : Visibility.Collapsed;
+        DocumentTabs.Visibility = OpenTabs == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (OpenTabs == 0) StartPageView.Fill(StartPage, this);
         if (Current is { } document) Dispatcher.BeginInvoke(() => document.Editor.TextArea.Focus(), System.Windows.Threading.DispatcherPriority.Input);
+        properties.Show(CurrentDesigner?.Surface);
+        if (CurrentDesigner is { } designer)
+        {
+            designer.Surface.Select(designer.Surface.SelectedName);
+            Dispatcher.BeginInvoke(() => designer.Surface.Focus(), System.Windows.Threading.DispatcherPriority.Input);
+        }
         UpdateToolbox();
         UpdateChrome();
     }
@@ -618,6 +666,7 @@ public partial class MainWindow : Window
 
     public void SaveAll()
     {
+        foreach (var designer in designers.Where(d => d.IsDirty).ToList()) SaveDesigner(designer);
         foreach (var document in documents.Where(d => d.IsDirty).ToList()) Save(document);
     }
 
@@ -634,7 +683,7 @@ public partial class MainWindow : Window
         };
     }
 
-    private bool ConfirmCloseAll() => documents.ToList().All(ConfirmDiscard);
+    private bool ConfirmCloseAll() => designers.ToList().All(ConfirmDiscard) && documents.ToList().All(ConfirmDiscard);
 
     private void CloseDocument(EditorDocument document)
     {
@@ -648,19 +697,21 @@ public partial class MainWindow : Window
         document.Detach();
         if (TabFor(document) is { } tab) DocumentTabs.Items.Remove(tab);
         if (documents.Count > 0) Select(documents[Math.Clamp(index, 0, documents.Count - 1)]);
+        else if (designers.Count > 0) SelectTab(designers[^1]);
         else DocumentSelected();
         SaveSession();
     }
 
     private void CloseAll()
     {
+        foreach (var designer in designers.ToList()) if (ConfirmDiscard(designer)) RemoveDesigner(designer); else return;
         foreach (var document in documents.ToList()) if (ConfirmDiscard(document)) RemoveDocument(document); else return;
     }
 
     private void SwitchTab(int delta)
     {
-        if (documents.Count < 2) return;
-        var index = (DocumentTabs.SelectedIndex + delta + documents.Count) % documents.Count;
+        if (OpenTabs < 2) return;
+        var index = (DocumentTabs.SelectedIndex + delta + OpenTabs) % OpenTabs;
         DocumentTabs.SelectedIndex = index;
     }
 
@@ -734,6 +785,22 @@ public partial class MainWindow : Window
     private void UpdateToolbox()
     {
         ToolboxTree.Items.Clear();
+        if (CurrentDesigner != null)
+        {
+            // Visual Studio's Windows Forms tabs: Pointer, then Common Controls and Containers.
+            var query0 = ToolboxSearch.Text.Trim();
+            var pointer = new TreeViewItem { Header = MakeHeader("\uE8B0", "Pointer"), IsSelected = true };
+            foreach (var (groupName, containers) in new[] { ("Common Controls", false), ("Containers", true) })
+            {
+                var node = new TreeViewItem { Header = new TextBlock { Text = groupName, FontWeight = FontWeights.SemiBold }, IsExpanded = true };
+                if (!containers) node.Items.Add(pointer);
+                foreach (var kind in ControlKinds.All.Where(k => k.IsContainer == containers && (query0.Length == 0 || k.Name.Contains(query0, StringComparison.OrdinalIgnoreCase))))
+                    node.Items.Add(new TreeViewItem { Header = MakeHeader(kind.Glyph, kind.Name), Tag = kind, ToolTip = $"{kind.Name}: click it, then click the form (or drag it there, or double-click it)" });
+                if (node.Items.Count > 0) ToolboxTree.Items.Add(node);
+            }
+            ToolboxEmpty.Visibility = Visibility.Collapsed;
+            return;
+        }
         var language = Current?.Language;
         var query = ToolboxSearch.Text.Trim();
         var groups = language == null ? [] : ToolboxCatalog.Groups(language.Id);
@@ -908,6 +975,149 @@ public partial class MainWindow : Window
         UpdateChrome();
     }
 
+    // MARK: Windows Forms designer
+
+    /// <summary>A .vb or .cs file with a Form1.Designer file next to it that holds a form.</summary>
+    private static bool IsForm(string path)
+    {
+        if (!(path.EndsWith(".vb", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))) return false;
+        try { return FormDesign.DesignerFileFor(path) is { } designer && FormDesign.IsFormDesigner(File.ReadAllText(designer)); }
+        catch (IOException) { return false; }
+    }
+
+    public void OpenDesigner(string path)
+    {
+        var codePath = path.Contains(".Designer.", StringComparison.OrdinalIgnoreCase) ? FormDesign.CodeFileFor(path) : path;
+        if (designers.FirstOrDefault(d => SamePath(d.CodePath, codePath)) is { } open) { SelectTab(open); return; }
+        DesignerDocument designer;
+        try { designer = new DesignerDocument(codePath); }
+        catch (Exception error) { ShowError($"Couldn't open “{Path.GetFileName(codePath)}” in the designer", error.Message); OpenPath(codePath); return; }
+        designers.Add(designer);
+        DocumentTabs.Items.Add(new TabItem { Tag = designer, Content = designer.Surface });
+        designer.StateChanged += () => { UpdateTab(designer); UpdateChrome(); };
+        designer.Surface.HandlerRequested += name => AddEventHandler(designer, name);
+        designer.Surface.ViewCodeRequested += () => OpenPath(designer.CodePath);
+        designer.Surface.ToolUsed += () => { if (CurrentDesigner == designer) UpdateToolbox(); };
+        designer.Surface.Renamed += (oldName, newName) => RenameInCode(designer, oldName, newName);
+        UpdateTab(designer);
+        SelectTab(designer);
+    }
+
+    private void SelectTab(DesignerDocument designer)
+    {
+        if (DocumentTabs.Items.OfType<TabItem>().FirstOrDefault(t => t.Tag == designer) is { } tab) DocumentTabs.SelectedItem = tab;
+        DocumentSelected();
+    }
+
+    private void ViewCode()
+    {
+        if (CurrentDesigner is { } designer) OpenPath(designer.CodePath);
+    }
+
+    private void ViewDesigner()
+    {
+        if (Current?.Path is { } path && IsForm(path)) OpenDesigner(path);
+    }
+
+    /// <summary>Double-clicking a control (or the form) opens its default event handler in the code, creating it if needed.</summary>
+    private void AddEventHandler(DesignerDocument designer, string? controlName)
+    {
+        var kind = controlName != null ? designer.Design.Control(controlName)?.Kind : null;
+        var eventName = controlName == null ? "Load" : kind?.DefaultEvent ?? "Click";
+        var eventArgs = controlName == null ? "EventArgs" : kind?.EventArgs ?? "EventArgs";
+        OpenPath(designer.CodePath);
+        if (Current is not { } code || !SamePath(code.Path, designer.CodePath)) return;
+        var before = designer.Design.Generate();
+        designer.Snapshot();
+        var (text, line) = designer.Design.AddHandler(code.Editor.Text, controlName, eventName, eventArgs);
+        if (designer.Design.Generate() != before) designer.Changed(); else designer.DropSnapshot();
+        if (text != code.Editor.Text) code.Editor.Document.Replace(0, code.Editor.Document.TextLength, text);
+        var indent = designer.Language == "vb" ? 9 : 9;
+        Dispatcher.BeginInvoke(() => code.Reveal(line, indent), System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    /// <summary>VB.NET's Handles clauses use control names; keep them in step when a control is renamed.</summary>
+    private void RenameInCode(DesignerDocument designer, string oldName, string newName)
+    {
+        if (designer.Language != "vb") return;
+        if (documents.FirstOrDefault(d => SamePath(d.Path, designer.CodePath)) is { } open)
+        {
+            var updated = FormDesign.RenameInCode(open.Editor.Text, "vb", oldName, newName);
+            if (updated != open.Editor.Text) open.Editor.Document.Replace(0, open.Editor.Document.TextLength, updated);
+        }
+        else if (File.Exists(designer.CodePath))
+        {
+            var text = File.ReadAllText(designer.CodePath);
+            var updated = FormDesign.RenameInCode(text, "vb", oldName, newName);
+            if (updated != text) File.WriteAllText(designer.CodePath, updated);
+        }
+    }
+
+    private bool SaveDesigner(DesignerDocument designer)
+    {
+        try
+        {
+            designer.Save();
+            // A text tab of the designer file shows the new code (unless it has its own unsaved edits).
+            if (documents.FirstOrDefault(d => SamePath(d.Path, designer.DesignerPath)) is { IsDirty: false } text)
+            {
+                text.Editor.Text = File.ReadAllText(designer.DesignerPath);
+                text.Editor.IsModified = false;
+            }
+            return true;
+        }
+        catch (Exception error)
+        {
+            ShowError($"Couldn't save “{designer.DisplayName}”", error.Message);
+            return false;
+        }
+    }
+
+    private bool ConfirmDiscard(DesignerDocument designer)
+    {
+        if (!designer.IsDirty) return true;
+        SelectTab(designer);
+        var answer = MessageBox.Show(this, $"Save changes to “{designer.DisplayName}”?", "CodeForge", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        return answer switch { MessageBoxResult.Yes => SaveDesigner(designer), MessageBoxResult.No => true, _ => false };
+    }
+
+    private void CloseDesigner(DesignerDocument designer)
+    {
+        if (ConfirmDiscard(designer)) RemoveDesigner(designer);
+    }
+
+    private void RemoveDesigner(DesignerDocument designer)
+    {
+        designers.Remove(designer);
+        if (DocumentTabs.Items.OfType<TabItem>().FirstOrDefault(t => t.Tag == designer) is { } tab) DocumentTabs.Items.Remove(tab);
+        designer.Surface.Close();
+        if (documents.Count > 0) Select(documents[^1]);
+        else if (designers.Count > 0) SelectTab(designers[^1]);
+        else DocumentSelected();
+        SaveSession();
+    }
+
+    private void SaveCurrent()
+    {
+        if (CurrentDesigner is { } designer) SaveDesigner(designer); else Save(Current);
+    }
+
+    private void CloseCurrent()
+    {
+        if (CurrentDesigner is { } designer) CloseDesigner(designer);
+        else if (Current is { } document) CloseDocument(document);
+    }
+
+    private void Undo()
+    {
+        if (CurrentDesigner is { } designer) designer.Undo(); else Current?.Editor.Undo();
+    }
+
+    private void Redo()
+    {
+        if (CurrentDesigner is { } designer) designer.Redo(); else Current?.Editor.Redo();
+    }
+
     // MARK: Projects
 
     public void NewProject()
@@ -998,14 +1208,15 @@ public partial class MainWindow : Window
     private void UpdateChrome()
     {
         var document = Current;
-        Title = (document != null ? document.DisplayName + (document.IsDirty ? " ●" : "") + " - " : "") + (workspace != null ? Path.GetFileName(workspace.TrimEnd('\\')) + " - " : "") + "CodeForge";
+        var designerTitle = CurrentDesigner is { } d0 ? d0.DisplayName + (d0.IsDirty ? " ●" : "") + " - " : "";
+        Title = designerTitle + (document != null ? document.DisplayName + (document.IsDirty ? " ●" : "") + " - " : "") + (workspace != null ? Path.GetFileName(workspace.TrimEnd('\\')) + " - " : "") + "CodeForge";
         var plan = CustomRunCommand == null ? ProjectRunPlan() : null;
         StartLabel.Text = CustomRunCommand != null || plan != null ? Path.GetFileName(workspace!.TrimEnd('\\')) : document?.DisplayName ?? "Start";
         StartButton.ToolTip = plan != null ? $"Start {plan.Name}: {plan.Run} (F5)" : "Start (F5)";
         StartButton.IsEnabled = !runner.IsRunning;
         StopButton.IsEnabled = runner.IsRunning;
         StatusBar.Background = runner.IsRunning ? Themes.Brush("#CA5100") : workspace == null ? Themes.Brush("#68217A") : (Brush)Application.Current.Resources["AccentBrush"];
-        StatusLanguage.Text = document?.Language.Name ?? "";
+        StatusLanguage.Text = document?.Language.Name ?? (CurrentDesigner != null ? "Windows Forms Designer" : "");
         UpdatePosition();
     }
 
@@ -1061,6 +1272,20 @@ public partial class MainWindow : Window
             case "newproject": Dispatcher.BeginInvoke(NewProject); break;
             case "options": Dispatcher.BeginInvoke(ShowOptions); break;
             case "find": ShowFind(); break;
+            case "design": ViewDesigner(); break;
+            case "code": ViewCode(); break;
+            case "handler": if (CurrentDesigner is { } h) AddEventHandler(h, h.Surface.SelectedName); break;
+            case "saveall": SaveAll(); break;
+            case var a when a.StartsWith("add:") && CurrentDesigner is { } d1:
+                var parts = a.Split(':');
+                if (ControlKinds.Find(parts[1]) is { } kind) d1.Surface.Place(kind, new Point(double.Parse(parts[2]), double.Parse(parts[3])));
+                break;
+            case var a when a.StartsWith("select:") && CurrentDesigner is { } d2: d2.Surface.Select(a[7..] == "form" ? null : a[7..]); break;
+            case var a when a.StartsWith("set:") && CurrentDesigner is { } d3:
+                var equals = a.IndexOf('=');
+                // Commas separate actions, so values with commas (sizes) are written with semicolons.
+                if (d3.Surface.SetFromText(a[4..equals], a[(equals + 1)..].Replace(';', ',')) is { } problem) Console.Error.WriteLine("SET: " + problem);
+                break;
         }
     }
 }

@@ -37,6 +37,19 @@ public static class Snapshot
                 if (!open.IsVisible) continue;
                 Save(open, open == window ? path : $"{path}.window{++index}.png");
             }
+            // A real screen capture too: it includes Windows Forms parts (the designer's Properties grid) that WPF can't draw.
+            try
+            {
+                window.Activate();
+                var dpi = VisualTreeHelper.GetDpi(window);
+                var topLeft = window.PointToScreen(new Point(0, 0));
+                var size = new System.Drawing.Size((int)(window.ActualWidth * dpi.DpiScaleX), (int)(window.ActualHeight * dpi.DpiScaleY));
+                using var bitmap = new System.Drawing.Bitmap(size.Width, size.Height);
+                using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+                    graphics.CopyFromScreen((int)topLeft.X, (int)topLeft.Y, 0, 0, size);
+                bitmap.Save(path.Replace(".png", ".screen.png"), System.Drawing.Imaging.ImageFormat.Png);
+            }
+            catch (Exception error) { Console.Error.WriteLine("Screen capture failed: " + error.Message); }
             Console.WriteLine($"SNAPSHOT saved {path}");
             Environment.Exit(0);
         });

@@ -143,23 +143,32 @@
 
             <!-- Solution Explorer -->
             <Border x:Name="ExplorerPane" Grid.Column="4" Background="{DynamicResource PanelBrush}">
-                <DockPanel>
-                    <DockPanel DockPanel.Dock="Top">
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,2,4,0">
-                            <Button x:Name="ExplorerNewFile" Style="{StaticResource IconButton}" FontSize="12" Content="&#xE8A5;" ToolTip="New File"/>
-                            <Button x:Name="ExplorerNewFolder" Style="{StaticResource IconButton}" FontSize="12" Content="&#xE8F4;" ToolTip="New Folder"/>
-                            <Button x:Name="ExplorerRefresh" Style="{StaticResource IconButton}" FontSize="12" Content="&#xE72C;" ToolTip="Refresh"/>
-                        </StackPanel>
-                        <TextBlock Style="{StaticResource PaneTitle}" Text="SOLUTION EXPLORER"/>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" MinHeight="100"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="PropertiesRow" Height="320" MinHeight="0"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel>
+                        <DockPanel DockPanel.Dock="Top">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,2,4,0">
+                                <Button x:Name="ExplorerNewFile" Style="{StaticResource IconButton}" FontSize="12" Content="&#xE8A5;" ToolTip="New File"/>
+                                <Button x:Name="ExplorerNewFolder" Style="{StaticResource IconButton}" FontSize="12" Content="&#xE8F4;" ToolTip="New Folder"/>
+                                <Button x:Name="ExplorerRefresh" Style="{StaticResource IconButton}" FontSize="12" Content="&#xE72C;" ToolTip="Refresh"/>
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource PaneTitle}" Text="SOLUTION EXPLORER"/>
+                        </DockPanel>
+                        <Grid>
+                            <TreeView x:Name="ExplorerTree" Background="Transparent" BorderThickness="0"/>
+                            <StackPanel x:Name="ExplorerEmpty" VerticalAlignment="Center" Margin="16">
+                                <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{DynamicResource SubtleTextBrush}" Text="No folder is open."/>
+                                <Button x:Name="ExplorerOpenFolder" Content="Open Folder…" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Grid>
                     </DockPanel>
-                    <Grid>
-                        <TreeView x:Name="ExplorerTree" Background="Transparent" BorderThickness="0"/>
-                        <StackPanel x:Name="ExplorerEmpty" VerticalAlignment="Center" Margin="16">
-                            <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{DynamicResource SubtleTextBrush}" Text="No folder is open."/>
-                            <Button x:Name="ExplorerOpenFolder" Content="Open Folder…" HorizontalAlignment="Center" Margin="0,10,0,0"/>
-                        </StackPanel>
-                    </Grid>
-                </DockPanel>
+                    <GridSplitter x:Name="PropertiesSplitter" Grid.Row="1" Height="4" HorizontalAlignment="Stretch" Background="{DynamicResource BorderBrush}" ShowsPreview="False"/>
+                    <Border x:Name="PropertiesHost" Grid.Row="2"/>
+                </Grid>
             </Border>
         </Grid>
     </DockPanel>

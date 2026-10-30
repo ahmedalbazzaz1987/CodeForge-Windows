@@ -10,6 +10,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
         DispatcherUnhandledException += OnUnhandledException;
+        // The form designer and Properties window use Windows Forms; give them the current Windows look.
+        System.Windows.Forms.Application.EnableVisualStyles();
+        System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
         Themes.Apply(Settings.Current.Theme);
         var window = new MainWindow();
         MainWindow = window;
