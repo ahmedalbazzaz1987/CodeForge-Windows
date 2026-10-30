@@ -250,7 +250,7 @@ public static class StartPageView
 {
     public static void Fill(ScrollViewer host, MainWindow window)
     {
-        var root = new StackPanel { Margin = new Thickness(56, 44, 56, 40), MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Left };
+        var root = new StackPanel { Margin = new Thickness(40, 36, 40, 40), MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Left };
         var title = new StackPanel { Orientation = Orientation.Horizontal };
         title.Children.Add(new Image { Source = new BitmapImage(new Uri("pack://application:,,,/Logo.png")), Width = 56, Height = 56, Margin = new Thickness(0, 0, 14, 0) });
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -261,12 +261,10 @@ public static class StartPageView
         title.Children.Add(words);
         root.Children.Add(title);
 
-        var columns = new Grid { Margin = new Thickness(0, 30, 0, 0) };
-        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
-        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        // Side by side when there's room, one above the other in a narrow window.
+        var columns = new WrapPanel { Margin = new Thickness(0, 30, 0, 0) };
 
-        var recent = new StackPanel();
+        var recent = new StackPanel { Width = 340, Margin = new Thickness(0, 0, 40, 24) };
         recent.Children.Add(new TextBlock { Text = "Open recent", FontSize = 18, Margin = new Thickness(0, 0, 0, 10) });
         var folders = Settings.Current.RecentFolders.Where(Directory.Exists).Take(10).ToList();
         if (folders.Count == 0)
@@ -287,10 +285,7 @@ public static class StartPageView
             item.Click += (_, _) => window.SetWorkspace(folder);
             recent.Children.Add(item);
         }
-        Grid.SetColumn(recent, 0);
-        columns.Children.Add(recent);
-
-        var start = new StackPanel();
+        var start = new StackPanel { Width = 340 };
         start.Children.Add(new TextBlock { Text = "Get started", FontSize = 18, Margin = new Thickness(0, 0, 0, 10) });
         void Action(string glyph, string heading, string detail, Action action)
         {
@@ -299,8 +294,8 @@ public static class StartPageView
             var icon = new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 22, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
             icon.SetResourceReference(TextBlock.ForegroundProperty, "AccentBrush");
             row.Children.Add(icon);
-            var text = new StackPanel();
-            text.Children.Add(new TextBlock { Text = heading, FontWeight = FontWeights.SemiBold });
+            var text = new StackPanel { Width = 270 };   // a fixed width lets the text wrap
+            text.Children.Add(new TextBlock { Text = heading, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
             var sub = new TextBlock { Text = detail, FontSize = 12, TextWrapping = TextWrapping.Wrap };
             sub.SetResourceReference(TextBlock.ForegroundProperty, "SubtleTextBrush");
             text.Children.Add(sub);
@@ -314,8 +309,8 @@ public static class StartPageView
         Action("", "Open a file", "Edit a single file", window.OpenFile);
         Action("", "Clone a repository", "Get code from GitHub or another Git server", window.CloneRepository);
         Action("", "New file", "Start writing right away", window.NewFile);
-        Grid.SetColumn(start, 2);
         columns.Children.Add(start);
+        columns.Children.Insert(0, recent);
         root.Children.Add(columns);
         host.Content = root;
     }
