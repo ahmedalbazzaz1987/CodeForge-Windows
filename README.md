@@ -5,6 +5,8 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
 
 - **Visual Studio layout**: Toolbox, Solution Explorer, editor tabs, Output / Error List / Terminal, menus in Visual
   Studio's order, a Debug / Release box and a colored status bar. Light, Dark and Blue themes.
+- **Windows Forms designer**: design forms by dragging controls from the Toolbox, set their properties in the
+  Properties window, and double-click a control to write its event handler, like Visual Studio.
 - **Windows desktop projects**: Windows Forms and WPF apps in VB.NET and C#, which only run on Windows, plus console
   apps, class libraries, ASP.NET Core, Blazor, gRPC, Worker services, .NET MAUI and test projects.
 - **Run and fix**: F5 runs the project or the current file; build errors from VB.NET, C#, gcc, Python and Node.js go to
@@ -35,6 +37,8 @@ Windows SmartScreen may warn the first time because the app isn't signed yet: cl
 | Run All Tests | Ctrl+R |
 | Find / Go To Line / Go To File | Ctrl+F / Ctrl+G / Ctrl+T |
 | Toggle comment / Duplicate line | Ctrl+K / Ctrl+D |
+| View Code / View Designer (forms) | F7 / Shift+F7 |
+| Properties window | F4 |
 | Solution Explorer / Toolbox / Output / Error List / Terminal | Ctrl+Alt+L / Ctrl+Alt+X / Ctrl+Alt+O / Ctrl+Alt+E / Ctrl+` |
 | Next / previous document | Ctrl+Tab / Ctrl+Shift+Tab |
 

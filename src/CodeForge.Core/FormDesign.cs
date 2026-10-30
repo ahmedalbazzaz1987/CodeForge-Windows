@@ -323,6 +323,16 @@ public sealed partial class FormDesign
         : "\"" + text.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t") + "\"";
 
     public string Bool(bool value) => IsVB ? (value ? "True" : "False") : (value ? "true" : "false");
+    public string Char(char value) => IsVB ? "\"" + (value == '"' ? "\"\"" : value.ToString()) + "\"c" : "'" + (value is '\'' or '\\' ? "\\" : "") + value + "'";
+
+    /// <summary>The character of a Char literal ("*"c in VB.NET, '*' in C#).</summary>
+    public char? UnquoteChar(string? expression)
+    {
+        var text = expression?.Trim() ?? "";
+        if (IsVB && text.EndsWith("\"c", StringComparison.OrdinalIgnoreCase) && Unquote(text[..^1]) is { Length: 1 } vb) return vb[0];
+        if (!IsVB && text.Length >= 3 && text[0] == '\'' && text[^1] == '\'') return System.Text.RegularExpressions.Regex.Unescape(text[1..^1]) is { Length: 1 } cs ? cs[0] : null;
+        return null;
+    }
     public string Point(int x, int y) => (IsVB ? "New" : "new") + $" System.Drawing.Point({x}, {y})";
     public string SizeValue(int width, int height) => (IsVB ? "New" : "new") + $" System.Drawing.Size({width}, {height})";
     public string Float(double value) => value.ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture) + "F";
@@ -414,7 +424,8 @@ public sealed partial class FormDesign
         if (MethodBody() is not { } body) throw new InvalidOperationException("The designer file has no InitializeComponent method.");
         var newline = source.Contains("\r\n") ? "\r\n" : "\n";
         // In C# the body ends at the method's "}", whose indentation was part of the old body.
-        var text = source[..body.Start] + GenerateBody().Replace(Environment.NewLine, newline) + (IsVB ? "" : "    ") + source[body.End..];
+        // In C# the body starts right after the method's "{" (on the same line), so it begins with a line break.
+        var text = source[..body.Start] + (IsVB ? "" : newline) + GenerateBody().Replace(Environment.NewLine, newline) + (IsVB ? "" : "    ") + source[body.End..];
 
         // Control fields: drop the old ones and write one per control.
         var fieldPattern = IsVB

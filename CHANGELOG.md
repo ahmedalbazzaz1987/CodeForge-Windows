@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0
+
+The Windows Forms designer, a feature only the Windows version has.
+
+- **Design forms visually**: double-click a form (Form1.vb or Form1.cs) in Solution Explorer to open it in Design view.
+  Controls are real Windows Forms controls, drawn exactly as they look when the program runs.
+- **Toolbox** with Common Controls (Button, Label, TextBox, CheckBox, RadioButton, ComboBox, ListBox, CheckedListBox,
+  DateTimePicker, MonthCalendar, NumericUpDown, PictureBox, ProgressBar, TrackBar, LinkLabel, MaskedTextBox,
+  RichTextBox, DataGridView) and Containers (GroupBox, Panel, FlowLayoutPanel): click a control and then the form, drag
+  it onto the form, or double-click it.
+- **Move and resize** with the mouse (snapping to a 4-pixel grid) or the arrow keys (Shift+arrows resize); drop a control
+  into a GroupBox or Panel to put it inside; resize the form from its edges; Delete, Bring to Front, Send to Back, and
+  Undo/Redo (Ctrl+Z / Ctrl+Y).
+- **Properties window** (under Solution Explorer, F4): Visual Studio's own property grid for the selected control or the
+  form, including colors, fonts, anchors and docking. Renaming a control updates its VB.NET Handles clauses.
+- **Double-click a control** to create its default event handler (Button → Click, TextBox → TextChanged, form → Load…)
+  and jump to it in the code, as in Visual Studio.
+- View Code (F7) and View Designer (Shift+F7). Saving writes Form1.Designer.vb / .cs in Visual Studio's format; existing
+  forms made in Visual Studio open too, and code the designer doesn't understand is kept as it is.
+
 ## 0.1.0
 
 The first Windows version of CodeForge, a small Visual Studio-style IDE (the Mac version lives at

@@ -48,6 +48,7 @@ foreach ($project in "LoginVB", "FormsCS") {
     Write-Host "== $project code file"
     Get-Content (Get-ChildItem "$work\$project" -Filter "Form1.*" | Where-Object { $_.Name -notlike "*.Designer.*" }).FullName
     dotnet build "$work\$project" -nologo -v q
+    if ($project -eq "LoginVB" -and -not (Select-String -Path "$work\LoginVB\Form1.Designer.vb" -SimpleMatch 'TextBox2.PasswordChar = "*"c' -Quiet)) { $failed += "LoginVB (PasswordChar wasn't saved)" }
     if ($LASTEXITCODE -ne 0) { $failed += "$project (the designer's code doesn't compile)" }
 }
 

@@ -117,6 +117,7 @@ public class FormDesignTests
         var (code, line) = design.AddHandler("namespace WinFormsApp1;\n\npublic partial class Form1 : Form\n{\n    public Form1()\n    {\n        InitializeComponent();\n    }\n}\n", "textBox1", "TextChanged", "EventArgs");
         var text = design.Generate();
 
+        Assert.Contains("    private void InitializeComponent()\n    {\n        components = new System.ComponentModel.Container();\n", text);
         Assert.Contains("        panel1.SuspendLayout();\n", text);
         Assert.Contains("        ((System.ComponentModel.ISupportInitialize)dataGridView1).BeginInit();\n", text);
         Assert.Contains("        panel1.Controls.Add(textBox1);\n", text);
@@ -200,6 +201,18 @@ public class FormDesignTests
         Assert.Equal(withClick, design.AddHandler(withClick, "Button1", "Click", "EventArgs").Code);   // already there
         var (withLoad, _) = design.AddHandler(withClick, null, "Load", "EventArgs");
         Assert.Contains("Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load", withLoad);
+    }
+
+    [Fact]
+    public void WritesAndReadsCharacters()
+    {
+        var vb = FormDesign.Parse(VbTemplate, "vb");
+        Assert.Equal("\"*\"c", vb.Char('*'));
+        Assert.Equal('*', vb.UnquoteChar("\"*\"c"));
+        var cs = FormDesign.Parse(CsTemplate, "csharp");
+        Assert.Equal("'*'", cs.Char('*'));
+        Assert.Equal("'\\''", cs.Char('\''));
+        Assert.Equal('\'', cs.UnquoteChar("'\\''"));
     }
 
     [Fact]

@@ -21,6 +21,7 @@ public static partial class WinFormsValues
         try
         {
             if (type == typeof(string)) return design.Unquote(text);
+            if (type == typeof(char)) return design.UnquoteChar(text);
             if (type == typeof(bool)) return text.Equals("true", StringComparison.OrdinalIgnoreCase) ? true : text.Equals("false", StringComparison.OrdinalIgnoreCase) ? false : null;
             if (type.IsEnum) return EvaluateEnum(text, type);
             if (Number(text) is { } number)
@@ -57,6 +58,7 @@ public static partial class WinFormsValues
             case null: return null;
             case string s: return design.Quote(s);
             case bool b: return design.Bool(b);
+            case char c: return design.Char(c);
             case Enum e: return SerializeEnum(e, vb);
             case int or long or short or byte: return Convert.ToString(value, Invariant);
             case float f: return F(f);
