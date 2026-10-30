@@ -6,3 +6,4 @@ screenshots/
 .vs/
 .DS_Store
 CodeForge-*-windows.zip*
+dist/

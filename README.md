@@ -17,13 +17,18 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
 
 ## Install
 
-1. Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (it includes the Desktop Runtime CodeForge needs):
-   `winget install Microsoft.DotNet.SDK.10`
-2. Download `CodeForge-<version>-windows.zip` from the [latest release](https://github.com/ahmedalbazzaz1987/CodeForge-Windows/releases/latest).
-3. Unzip it to `%LOCALAPPDATA%\Programs` (so updates can replace it without administrator rights) and run
-   `CodeForge\CodeForge.exe`. Pin it to the Start menu or taskbar if you like.
+1. Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (it includes the Desktop Runtime CodeForge needs,
+   and builds your .NET projects): `winget install Microsoft.DotNet.SDK.10`
+2. Download **`CodeForge-<version>-setup.exe`** from the [latest release](https://github.com/ahmedalbazzaz1987/CodeForge-Windows/releases/latest)
+   and run it. It installs for your user account (no administrator rights needed), adds CodeForge to the Start menu,
+   can add a desktop shortcut and an **Open with CodeForge** item when you right-click a folder, and appears in
+   **Settings ▸ Apps** so you can uninstall it like any other program.
+3. Windows SmartScreen may warn the first time because the installer isn't signed yet: click **More info ▸ Run anyway**.
 
-Windows SmartScreen may warn the first time because the app isn't signed yet: click **More info ▸ Run anyway**.
+CodeForge updates itself: **Help ▸ Check for Updates** (or the daily check) downloads the new setup, checks its SHA-256
+and installs it quietly, then starts CodeForge again.
+
+A portable version (`CodeForge-<version>-windows.zip`, no installation) is in each release too.
 
 ## Shortcuts
 
@@ -67,6 +72,7 @@ installed copies update from.
 src/CodeForge.Core/   Engine: languages, error parsing, build detection, templates, Toolbox, updates (no UI; tested)
 src/CodeForge/        The WPF app: main window, editor tabs, runner, terminal, dialogs, themes, updater
 tests/                Unit tests for the engine
+installer/            CodeForge.iss (Inno Setup: the setup program)
 scripts/              screenshots.ps1
 ```
 

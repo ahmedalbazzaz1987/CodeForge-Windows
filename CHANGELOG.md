@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- **CodeForge now has an installer** (`CodeForge-0.2.1-setup.exe`): a setup wizard that installs for your user account
+  without administrator rights (or for all users, if you choose), adds Start menu and optional desktop shortcuts, an
+  optional **Open with CodeForge** item when you right-click a folder, and optional "Open with" for .vbproj, .csproj
+  and .sln files. It checks that .NET 10 is installed, and CodeForge appears in Settings ▸ Apps to uninstall.
+- Installed copies update by running the new setup quietly and restarting. The portable zip is still available.
+- The Windows Forms designer saves PasswordChar and other single-character properties.
+
 ## 0.2.0
 
 The Windows Forms designer, a feature only the Windows version has.

@@ -143,11 +143,14 @@ public class UpdateTests
         var json = """
             {"tag_name":"v0.2.0","body":"Notes","html_url":"https://github.com/o/r/releases/tag/v0.2.0","assets":[
               {"name":"CodeForge-0.2.0-windows.zip","browser_download_url":"https://x/zip"},
-              {"name":"CodeForge-0.2.0-windows.zip.sha256","browser_download_url":"https://x/sha"}]}
+              {"name":"CodeForge-0.2.0-windows.zip.sha256","browser_download_url":"https://x/sha"},
+              {"name":"CodeForge-0.2.0-setup.exe","browser_download_url":"https://x/setup"},
+              {"name":"CodeForge-0.2.0-setup.exe.sha256","browser_download_url":"https://x/setup-sha"}]}
             """;
         var release = ReleaseInfo.Parse(json)!;
         Assert.Equal("0.2.0", release.Version.ToString());
         Assert.Equal("https://x/zip", release.ZipUrl);
+        Assert.Equal(("https://x/setup", "https://x/setup-sha"), (release.SetupUrl, release.SetupChecksumUrl));
         Assert.Null(ReleaseInfo.Parse("""{"tag_name":"v1","assets":[]}"""));
         Assert.Equal(new string('a', 64), ReleaseInfo.ChecksumValue(new string('A', 64) + "  CodeForge.zip\n"));
         Assert.Null(ReleaseInfo.ChecksumValue("oops"));

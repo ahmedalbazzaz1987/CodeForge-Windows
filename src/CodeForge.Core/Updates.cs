@@ -36,7 +36,9 @@ public sealed record AppVersion(int[] Parts) : IComparable<AppVersion>
 }
 
 /// <summary>A GitHub release that the updater can install: the zip and its SHA-256 checksum file.</summary>
-public sealed record ReleaseInfo(AppVersion Version, string Notes, string ZipUrl, string ChecksumUrl, string PageUrl)
+/// <param name="SetupUrl">The installer (CodeForge-x.y.z-setup.exe), which installed copies update with; the zip is for portable copies.</param>
+public sealed record ReleaseInfo(AppVersion Version, string Notes, string ZipUrl, string ChecksumUrl, string PageUrl,
+                                 string? SetupUrl = null, string? SetupChecksumUrl = null)
 {
     /// <summary>Reads GitHub's "latest release" JSON. Returns null when the release has no CodeForge-x.y.z-windows.zip.</summary>
     public static ReleaseInfo? Parse(string json)
@@ -44,18 +46,20 @@ public sealed record ReleaseInfo(AppVersion Version, string Notes, string ZipUrl
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         if (AppVersion.Parse(root.GetProperty("tag_name").GetString() ?? "") is not { } version) return null;
-        string? zip = null, checksum = null;
+        string? zip = null, checksum = null, setup = null, setupChecksum = null;
         foreach (var asset in root.GetProperty("assets").EnumerateArray())
         {
             var name = asset.GetProperty("name").GetString() ?? "";
             var url = asset.GetProperty("browser_download_url").GetString();
             if (name.EndsWith("-windows.zip", StringComparison.OrdinalIgnoreCase)) zip = url;
             if (name.EndsWith("-windows.zip.sha256", StringComparison.OrdinalIgnoreCase)) checksum = url;
+            if (name.EndsWith("-setup.exe", StringComparison.OrdinalIgnoreCase)) setup = url;
+            if (name.EndsWith("-setup.exe.sha256", StringComparison.OrdinalIgnoreCase)) setupChecksum = url;
         }
         if (zip == null || checksum == null) return null;
         var notes = root.TryGetProperty("body", out var body) ? body.GetString() ?? "" : "";
         var page = root.TryGetProperty("html_url", out var html) ? html.GetString() ?? "" : "";
-        return new ReleaseInfo(version, notes, zip, checksum, page);
+        return new ReleaseInfo(version, notes, zip, checksum, page, setup, setupChecksum);
     }
 
     /// <summary>The hash in a "&lt;hex&gt;  file.zip" checksum file.</summary>

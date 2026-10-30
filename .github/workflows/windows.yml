@@ -51,10 +51,60 @@ jobs:
           "$hash  $zip" | Out-File -Encoding ascii "$zip.sha256"
           "ZIP=$zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
+      - name: Installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION).Trim()
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress | Out-Null
+          }
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc /Qp "/DAppVersion=$version" "/DSourceDir=$PWD\publish\CodeForge" installer\CodeForge.iss
+          if ($LASTEXITCODE -ne 0) { throw "The installer didn't build" }
+          $setup = "CodeForge-$version-setup.exe"
+          Move-Item "dist\$setup" $setup
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          "$hash  $setup" | Out-File -Encoding ascii "$setup.sha256"
+          "SETUP=$setup" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Test the installer
+        shell: pwsh
+        run: |
+          # Install quietly for this user, check the app and its Start menu shortcut, start it, then uninstall.
+          $dir = Join-Path $env:RUNNER_TEMP "CodeForge-installed"
+          $p = Start-Process -FilePath ".\$env:SETUP" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER","/DIR=$dir","/TASKS=desktopicon,openwith" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Setup failed with exit code $($p.ExitCode)" }
+          foreach ($file in "CodeForge.exe", "CodeForge.Core.dll", "ICSharpCode.AvalonEdit.dll", "unins000.exe") {
+            if (-not (Test-Path (Join-Path $dir $file))) { throw "Setup didn't install $file" }
+          }
+          $shortcut = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\CodeForge.lnk"
+          if (-not (Test-Path $shortcut)) { throw "No Start menu shortcut" }
+          if (-not (Test-Path "Registry::HKEY_CURRENT_USER\Software\Classes\Directory\shell\CodeForge\command")) { throw "No Open with CodeForge entry" }
+          New-Item -ItemType Directory -Force screenshots | Out-Null
+          $env:CF_SNAPSHOT = Join-Path $PWD "screenshots\9-installed.png"; $env:CF_FRESH = "1"; $env:CF_SETTINGS_DIR = Join-Path $env:RUNNER_TEMP "cf-installed-settings"
+          $app = Start-Process -FilePath (Join-Path $dir "CodeForge.exe") -PassThru
+          if (-not $app.WaitForExit(120000) -or $app.ExitCode -ne 0) { throw "The installed CodeForge didn't start properly" }
+          Remove-Item env:CF_SNAPSHOT, env:CF_FRESH, env:CF_SETTINGS_DIR
+          $u = Start-Process -FilePath (Join-Path $dir "unins000.exe") -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
+          Start-Sleep -Seconds 3
+          if (Test-Path (Join-Path $dir "CodeForge.exe")) { throw "Uninstalling left CodeForge.exe behind" }
+          if (Test-Path $shortcut) { throw "Uninstalling left the Start menu shortcut" }
+          if (Test-Path "Registry::HKEY_CURRENT_USER\Software\Classes\Directory\shell\CodeForge") { throw "Uninstalling left the Open with entry" }
+          Write-Host "Installer OK: installs, starts and uninstalls cleanly"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installed-screenshot
+          path: screenshots/9-installed*
+
       - uses: actions/upload-artifact@v4
         with:
           name: CodeForge-windows
-          path: CodeForge-*-windows.zip*
+          path: |
+            CodeForge-*-windows.zip*
+            CodeForge-*-setup.exe*
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -68,4 +118,4 @@ jobs:
           $notes = (Get-Content CHANGELOG.md -Raw) -split "(?m)^## " | Where-Object { $_ -match "^$([regex]::Escape($version))\s" } | Select-Object -First 1
           $notes = ($notes -replace "^\S+\s*", "").Trim()
           if (-not $notes) { $notes = "CodeForge $version for Windows" }
-          gh release create "${{ github.ref_name }}" $env:ZIP "$env:ZIP.sha256" --title "CodeForge $version for Windows" --notes $notes
+          gh release create "${{ github.ref_name }}" $env:SETUP "$env:SETUP.sha256" $env:ZIP "$env:ZIP.sha256" --title "CodeForge $version for Windows" --notes $notes
