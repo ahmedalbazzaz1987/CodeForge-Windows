@@ -1,0 +1,166 @@
+<Window x:Class="CodeForge.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CodeForge" Width="1280" Height="820" MinWidth="760" MinHeight="460"
+        Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextBrush}"
+        Icon="CodeForge.ico" UseLayoutRounding="True">
+    <Window.Resources>
+        <Style x:Key="PaneTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource SubtleTextBrush}"/>
+            <Setter Property="Margin" Value="10,8,10,6"/>
+        </Style>
+        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Margin" Value="1,0"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- Menus, in Visual Studio's order -->
+        <Menu x:Name="MainMenu" DockPanel.Dock="Top" Background="{DynamicResource ChromeBrush}" Padding="2,0"/>
+
+        <!-- Standard toolbar -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource ChromeBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Margin="6,3">
+                <Button x:Name="NewProjectButton" Style="{StaticResource IconButton}" Content="&#xE8F4;" ToolTip="New Project (Ctrl+Shift+N)"/>
+                <Button x:Name="OpenButton" Style="{StaticResource IconButton}" Content="&#xE8DA;" ToolTip="Open Folder (Ctrl+Shift+O)"/>
+                <Button x:Name="SaveAllButton" Style="{StaticResource IconButton}" Content="&#xE78C;" ToolTip="Save All (Ctrl+Shift+S)"/>
+                <Separator Margin="6,4"/>
+                <Button x:Name="UndoButton" Style="{StaticResource IconButton}" Content="&#xE7A7;" ToolTip="Undo (Ctrl+Z)"/>
+                <Button x:Name="RedoButton" Style="{StaticResource IconButton}" Content="&#xE7A6;" ToolTip="Redo (Ctrl+Y)"/>
+                <Separator Margin="6,4"/>
+                <ComboBox x:Name="ConfigurationBox" Width="96" Margin="2,0" VerticalAlignment="Center" ToolTip="Solution Configurations"/>
+                <Button x:Name="StartButton" Margin="6,0,2,0" Padding="10,4" ToolTip="Start (F5)">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Foreground="#16A34A" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock x:Name="StartLabel" Text="Start" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="StopButton" Style="{StaticResource IconButton}" Content="&#xE71A;" Foreground="#DC2626" ToolTip="Stop (Shift+F5)"/>
+                <Button x:Name="BuildButton" Style="{StaticResource IconButton}" Content="&#xE90F;" ToolTip="Build (Ctrl+Shift+B)"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Status bar: blue when ready, orange while running, purple with no folder -->
+        <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="24" Background="#007ACC">
+            <DockPanel Margin="10,0">
+                <TextBlock x:Name="StatusBranch" DockPanel.Dock="Right" Foreground="White" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                <TextBlock x:Name="StatusLanguage" DockPanel.Dock="Right" Foreground="White" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                <TextBlock x:Name="StatusPosition" DockPanel.Dock="Right" Foreground="White" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                <TextBlock x:Name="StatusText" Foreground="White" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text="Ready"/>
+            </DockPanel>
+        </Border>
+
+        <Grid x:Name="WorkspaceGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="ToolboxColumn" Width="220" MinWidth="0"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="300"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition x:Name="ExplorerColumn" Width="280" MinWidth="0"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Toolbox -->
+            <Border x:Name="ToolboxPane" Grid.Column="0" Background="{DynamicResource PanelBrush}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Style="{StaticResource PaneTitle}" Text="TOOLBOX"/>
+                    <TextBox x:Name="ToolboxSearch" DockPanel.Dock="Top" Margin="8,0,8,6" ToolTip="Search Toolbox"/>
+                    <Grid>
+                        <TreeView x:Name="ToolboxTree" Background="Transparent" BorderThickness="0"/>
+                        <TextBlock x:Name="ToolboxEmpty" TextWrapping="Wrap" TextAlignment="Center" Margin="16" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SubtleTextBrush}"/>
+                    </Grid>
+                </DockPanel>
+            </Border>
+            <GridSplitter x:Name="ToolboxSplitter" Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="{DynamicResource BorderBrush}" ShowsPreview="False"/>
+
+            <!-- Editor area and the bottom panel -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="120"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition x:Name="PanelRow" Height="220" MinHeight="0"/>
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Background="{DynamicResource EditorBrush}">
+                    <TabControl x:Name="DocumentTabs" BorderThickness="0" Padding="0" Background="{DynamicResource EditorBrush}"/>
+                    <ScrollViewer x:Name="StartPage" VerticalScrollBarVisibility="Auto" Background="{DynamicResource EditorBrush}"/>
+                </Grid>
+                <GridSplitter x:Name="PanelSplitter" Grid.Row="1" Height="4" HorizontalAlignment="Stretch" Background="{DynamicResource BorderBrush}" ShowsPreview="False"/>
+                <Border x:Name="BottomPanel" Grid.Row="2" Background="{DynamicResource PanelBrush}">
+                    <TabControl x:Name="PanelTabs" BorderThickness="0" Padding="0" Background="{DynamicResource PanelBrush}">
+                        <TabItem x:Name="OutputTab" Header="Output">
+                            <DockPanel>
+                                <TextBox x:Name="OutputInput" DockPanel.Dock="Bottom" Margin="4" ToolTip="Input for the running program: press Enter to send"/>
+                                <TextBox x:Name="OutputText" IsReadOnly="True" BorderThickness="0" FontFamily="Cascadia Mono, Consolas" FontSize="12.5"
+                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"
+                                         Background="{DynamicResource EditorBrush}" Foreground="{DynamicResource EditorTextBrush}"/>
+                            </DockPanel>
+                        </TabItem>
+                        <TabItem x:Name="ErrorsTab" Header="Error List">
+                            <ListView x:Name="ErrorList" BorderThickness="0" Background="{DynamicResource EditorBrush}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="" Width="34">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Icon}" Foreground="{Binding IconBrush}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Code" Width="80" DisplayMemberBinding="{Binding Code}"/>
+                                        <GridViewColumn Header="Description" Width="560" DisplayMemberBinding="{Binding Message}"/>
+                                        <GridViewColumn Header="File" Width="170" DisplayMemberBinding="{Binding FileName}"/>
+                                        <GridViewColumn Header="Line" Width="60" DisplayMemberBinding="{Binding Line}"/>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </TabItem>
+                        <TabItem x:Name="TerminalTab" Header="Terminal">
+                            <DockPanel>
+                                <DockPanel DockPanel.Dock="Bottom" Margin="4">
+                                    <TextBlock x:Name="TerminalPrompt" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="4,0,6,0" FontFamily="Cascadia Mono, Consolas"
+                                               Foreground="{DynamicResource AccentBrush}" Text="PS&gt;"/>
+                                    <TextBox x:Name="TerminalInput" FontFamily="Cascadia Mono, Consolas" ToolTip="Type a PowerShell command and press Enter (Up for history)"/>
+                                </DockPanel>
+                                <TextBox x:Name="TerminalText" IsReadOnly="True" BorderThickness="0" FontFamily="Cascadia Mono, Consolas" FontSize="12.5"
+                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"
+                                         Background="{DynamicResource EditorBrush}" Foreground="{DynamicResource EditorTextBrush}"/>
+                            </DockPanel>
+                        </TabItem>
+                    </TabControl>
+                </Border>
+            </Grid>
+
+            <GridSplitter x:Name="ExplorerSplitter" Grid.Column="3" Width="4" HorizontalAlignment="Stretch" Background="{DynamicResource BorderBrush}" ShowsPreview="False"/>
+
+            <!-- Solution Explorer -->
+            <Border x:Name="ExplorerPane" Grid.Column="4" Background="{DynamicResource PanelBrush}">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,2,4,0">
+                            <Button x:Name="ExplorerNewFile" Style="{StaticResource IconButton}" FontSize="12" Content="&#xE8A5;" ToolTip="New File"/>
+                            <Button x:Name="ExplorerNewFolder" Style="{StaticResource IconButton}" FontSize="12" Content="&#xE8F4;" ToolTip="New Folder"/>
+                            <Button x:Name="ExplorerRefresh" Style="{StaticResource IconButton}" FontSize="12" Content="&#xE72C;" ToolTip="Refresh"/>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource PaneTitle}" Text="SOLUTION EXPLORER"/>
+                    </DockPanel>
+                    <Grid>
+                        <TreeView x:Name="ExplorerTree" Background="Transparent" BorderThickness="0"/>
+                        <StackPanel x:Name="ExplorerEmpty" VerticalAlignment="Center" Margin="16">
+                            <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{DynamicResource SubtleTextBrush}" Text="No folder is open."/>
+                            <Button x:Name="ExplorerOpenFolder" Content="Open Folder…" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

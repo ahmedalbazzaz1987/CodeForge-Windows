@@ -1,0 +1,67 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Unit tests
+        run: dotnet test -c Release --no-build --logger "console;verbosity=normal"
+
+      - name: Publish
+        run: dotnet publish src/CodeForge/CodeForge.csproj -c Release -o publish/CodeForge
+
+      - name: Screenshots
+        shell: pwsh
+        run: scripts/screenshots.ps1 -App publish/CodeForge/CodeForge.exe -Out screenshots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: screenshots
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION).Trim()
+          $zip = "CodeForge-$version-windows.zip"
+          Compress-Archive -Path publish/CodeForge -DestinationPath $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  $zip" | Out-File -Encoding ascii "$zip.sha256"
+          "ZIP=$zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodeForge-windows
+          path: CodeForge-*-windows.zip*
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content VERSION).Trim()
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} doesn't match VERSION $version" }
+          # Release notes: this version's section of CHANGELOG.md.
+          $notes = (Get-Content CHANGELOG.md -Raw) -split "(?m)^## " | Where-Object { $_ -match "^$([regex]::Escape($version))\s" } | Select-Object -First 1
+          $notes = ($notes -replace "^\S+\s*", "").Trim()
+          if (-not $notes) { $notes = "CodeForge $version for Windows" }
+          gh release create "${{ github.ref_name }}" $env:ZIP "$env:ZIP.sha256" --title "CodeForge $version for Windows" --notes $notes
