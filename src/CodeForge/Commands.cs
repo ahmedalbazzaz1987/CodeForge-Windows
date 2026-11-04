@@ -25,3 +25,9 @@ public sealed record ErrorRow(Core.Diagnostic Diagnostic, string FullPath)
     public string FileName => System.IO.Path.GetFileName(FullPath);
     public int Line => Diagnostic.Line;
 }
+
+/// <summary>A row in Find Results or the Task List.</summary>
+public sealed record LocationRow(string FullPath, int Line, int? Column, string Text)
+{
+    public string FileName => System.IO.Path.GetFileName(FullPath);
+}

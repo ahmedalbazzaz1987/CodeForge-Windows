@@ -3,12 +3,15 @@
 A small, self-updating, Visual Studio-style IDE for Windows, written in C# with WPF. It's the Windows version of
 [CodeForge for Mac](https://github.com/ahmedalbazzaz1987/CodeForge).
 
-- **Visual Studio layout**: Toolbox, Solution Explorer, editor tabs, Output / Error List / Terminal, menus in Visual
-  Studio's order, a Debug / Release box and a colored status bar. Light, Dark and Blue themes.
+- **Visual Studio layout**: Toolbox, Solution Explorer, editor tabs, Output / Error List / Task List / Terminal, menus in
+  Visual Studio's order, a Debug / Release box and a colored status bar.
 - **Windows Forms designer**: design forms by dragging controls from the Toolbox, set their properties in the
   Properties window, and double-click a control to write its event handler, like Visual Studio.
 - **Windows desktop projects**: Windows Forms and WPF apps in VB.NET and C#, which only run on Windows, plus console
   apps, class libraries, ASP.NET Core, Blazor, gRPC, Worker services, .NET MAUI and test projects.
+- **Find and navigate**: Find and Replace in Files, a Task List of TODO comments, bookmarks, Navigate Backward/Forward
+  and Tab-expanding code snippets.
+- **Modern themes**: Modern Light, Modern Dark, Gray and Midnight, plus Visual Studio's Light, Dark and Blue.
 - **Run and fix**: F5 runs the project or the current file; build errors from VB.NET, C#, gcc, Python and Node.js go to
   the Error List and are underlined in the code.
 - **Many languages**: C#, VB.NET, F#, XAML, Python, JavaScript, TypeScript, C, C++, Java, Kotlin, Go, Rust, Swift,
@@ -44,6 +47,12 @@ A portable version (`CodeForge-<version>-windows.zip`, no installation) is in ea
 | Toggle comment / Duplicate line | Ctrl+K / Ctrl+D |
 | View Code / View Designer (forms) | F7 / Shift+F7 |
 | Properties window | F4 |
+| Find in Files / Replace in Files | Ctrl+Shift+F / Ctrl+Shift+H |
+| Task List | Ctrl+Alt+K |
+| Toggle / next / previous bookmark | Ctrl+F2 / F2 / Shift+F2 |
+| Navigate Backward / Forward | Ctrl+- / Ctrl+Shift+- |
+| Expand a code snippet | type its shortcut, then Tab |
+| Zoom in / out | Ctrl+Shift+. / Ctrl+Shift+, |
 | Solution Explorer / Toolbox / Output / Error List / Terminal | Ctrl+Alt+L / Ctrl+Alt+X / Ctrl+Alt+O / Ctrl+Alt+E / Ctrl+` |
 | Next / previous document | Ctrl+Tab / Ctrl+Shift+Tab |
 
@@ -78,4 +87,4 @@ scripts/              screenshots.ps1
 
 ## License
 
-MIT
+MIT. Copyright © 2026 Ahmed Al-Bazzaz.

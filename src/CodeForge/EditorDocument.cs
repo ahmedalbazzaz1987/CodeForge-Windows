@@ -24,6 +24,8 @@ public sealed class EditorDocument
     public event Action? CaretMoved;
 
     private readonly DiagnosticRenderer diagnostics;
+    private readonly List<TextAnchor> bookmarks = [];
+    private readonly BookmarkRenderer bookmarkRenderer;
     private Encoding encoding = new UTF8Encoding(false);
 
     public EditorDocument(string? path, string text, string untitledName = "Untitled")
@@ -52,6 +54,9 @@ public sealed class EditorDocument
         SearchPanel.Install(Editor.TextArea);
         diagnostics = new DiagnosticRenderer(Editor);
         Editor.TextArea.TextView.BackgroundRenderers.Add(diagnostics);
+        bookmarkRenderer = new BookmarkRenderer(bookmarks);
+        Editor.TextArea.TextView.BackgroundRenderers.Add(bookmarkRenderer);
+        Editor.TextArea.PreviewKeyDown += ExpandSnippetOnTab;
         Editor.TextChanged += (_, _) =>
         {
             diagnostics.Clear();   // positions are stale after an edit
@@ -107,7 +112,8 @@ public sealed class EditorDocument
         Editor.TextArea.SelectionBrush = Themes.Brush(palette.Selection);
         Editor.TextArea.SelectionForeground = null;
         Editor.TextArea.SelectionBorder = null;
-        Editor.SyntaxHighlighting = Highlighting.For(Language, palette.IsDark);
+        Editor.SyntaxHighlighting = Highlighting.For(Language, palette);
+        Editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
     }
 
     public void SetFontSize(double size) => Editor.FontSize = size;
@@ -132,6 +138,80 @@ public sealed class EditorDocument
     public string? DiagnosticAt(int offset) => diagnostics.MessageAt(offset);
 
     public void Detach() => Themes.Changed -= ApplyTheme;
+
+    // MARK: Bookmarks
+
+    /// <summary>The bookmarked lines (1-based). Anchors keep them on their code as text is edited above them.</summary>
+    public List<int> BookmarkLines => bookmarks.Select(a => a.Line).Distinct().Order().ToList();
+
+    public void SetBookmarks(IEnumerable<int> lines)
+    {
+        bookmarks.Clear();
+        foreach (var line in lines.Where(l => l >= 1 && l <= Editor.Document.LineCount)) AddBookmark(line);
+        Editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+    }
+
+    public void ToggleBookmark(int line)
+    {
+        if (bookmarks.RemoveAll(a => a.Line == line) == 0) AddBookmark(line);
+        Editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+    }
+
+    private void AddBookmark(int line)
+    {
+        var anchor = Editor.Document.CreateAnchor(Editor.Document.GetLineByNumber(line).Offset);
+        anchor.MovementType = AnchorMovementType.AfterInsertion;   // Enter at the start of the line moves the bookmark with the text
+        anchor.SurviveDeletion = true;
+        bookmarks.Add(anchor);
+    }
+
+    // MARK: Snippets
+
+    /// <summary>Tab right after a snippet shortcut (prop, cw, For…) expands it, as in Visual Studio.</summary>
+    private void ExpandSnippetOnTab(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Tab && System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.None && ExpandSnippet()) e.Handled = true;
+    }
+
+    public bool ExpandSnippet()
+    {
+        if (Editor.SelectionLength > 0 || Editor.IsReadOnly) return false;
+        var document = Editor.Document;
+        var end = Editor.CaretOffset;
+        var start = end;
+        while (start > 0 && (char.IsLetterOrDigit(document.GetCharAt(start - 1)) || document.GetCharAt(start - 1) == '_')) start--;
+        if (start == end || Snippets.Find(Language.Id, document.GetText(start, end - start)) is not { } snippet) return false;
+        var line = document.GetLineByOffset(start);
+        var indent = new string(document.GetText(line).TakeWhile(char.IsWhiteSpace).ToArray());
+        var (text, cursor) = snippet.ToolboxItem.Expanded(indent);
+        document.Replace(start, end - start, text);
+        Editor.CaretOffset = start + cursor;
+        return true;
+    }
+}
+
+/// <summary>A bar and a soft band on bookmarked lines.</summary>
+public sealed class BookmarkRenderer(List<TextAnchor> bookmarks) : IBackgroundRenderer
+{
+    public KnownLayer Layer => KnownLayer.Background;
+
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (bookmarks.Count == 0 || !textView.VisualLinesValid) return;
+        var lines = bookmarks.Select(a => a.Line).ToHashSet();
+        var accent = (Color)ColorConverter.ConvertFromString(Themes.Current.Accent);
+        var bar = new SolidColorBrush(accent);
+        var band = new SolidColorBrush(Color.FromArgb(0x22, accent.R, accent.G, accent.B));
+        bar.Freeze();
+        band.Freeze();
+        foreach (var line in textView.VisualLines)
+        {
+            if (!lines.Contains(line.FirstDocumentLine.LineNumber)) continue;
+            var top = line.VisualTop - textView.ScrollOffset.Y;
+            drawingContext.DrawRectangle(band, null, new Rect(0, top, textView.ActualWidth, line.Height));
+            drawingContext.DrawRectangle(bar, null, new Rect(0, top, 3, line.Height));
+        }
+    }
 }
 
 /// <summary>Draws a wavy underline (red for errors, yellow for warnings) under the problems from the last build.</summary>

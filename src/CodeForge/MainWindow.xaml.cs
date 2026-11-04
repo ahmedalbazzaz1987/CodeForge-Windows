@@ -27,6 +27,12 @@ public partial class MainWindow : Window
     private Action? afterRun;
     private string? pendingOpenFolder;
     private int untitledCount;
+    private readonly NavigationHistory<Place> history = new();
+    private bool navigatingHistory;
+    private FindInFilesWindow? findWindow;
+
+    /// <summary>A place in the code, for Navigate Backward and Forward.</summary>
+    private readonly record struct Place(string Path, int Line);
     private List<Diagnostic> diagnostics = [];
 
     public string? Workspace => workspace;
@@ -94,11 +100,19 @@ public partial class MainWindow : Window
             Item("_Redo", Redo, "", HasTab),
             Line(),
             Item("_Find…", () => ShowFind(), "", HasDocument),
+            Item("Find in _Files…", () => ShowFindInFiles(false), "Ctrl+Shift+F"),
+            Item("Replace in File_s…", () => ShowFindInFiles(true), "Ctrl+Shift+H"),
+            Line(),
             Item("_Go To Line…", GoToLine, "Ctrl+G", HasDocument),
             Item("Go To _File…", QuickOpen, "Ctrl+T"),
             Line(),
             Item("Toggle Line _Comment", ToggleComment, "Ctrl+K", HasDocument),
-            Item("_Duplicate Line", DuplicateLine, "Ctrl+D", HasDocument));
+            Item("_Duplicate Line", DuplicateLine, "Ctrl+D", HasDocument),
+            Line(),
+            Item("Toggle _Bookmark", ToggleBookmark, "Ctrl+F2", HasDocument),
+            Item("Ne_xt Bookmark", () => GoToBookmark(false), "F2", () => settings.Bookmarks.Count > 0),
+            Item("Pre_vious Bookmark", () => GoToBookmark(true), "Shift+F2", () => settings.Bookmarks.Count > 0),
+            Item("Clear All Bookmarks", ClearBookmarks, "Ctrl+Shift+F2", () => settings.Bookmarks.Count > 0));
 
         Menu("_View",
             Item("_Code", ViewCode, "F7", () => CurrentDesigner != null || (Current?.Path is { } p && IsForm(p))),
@@ -109,14 +123,19 @@ public partial class MainWindow : Window
             Item("Tool_box", () => SetPane(ToolboxPane, true), "Ctrl+Alt+X"),
             Item("_Output", () => ShowPanel(OutputTab), "Ctrl+Alt+O"),
             Item("Error L_ist", () => ShowPanel(ErrorsTab), "Ctrl+Alt+E"),
+            Item("Task _List", ShowTaskList, "Ctrl+Alt+K"),
+            Item("Find _Results", () => ShowPanel(FindResultsTab)),
             Item("_Terminal", () => ShowPanel(TerminalTab), "Ctrl+OemTilde"),
+            Line(),
+            Item("Navigate _Backward", NavigateBackward, "Ctrl+OemMinus", () => history.CanGoBack),
+            Item("Navigate _Forward", NavigateForward, "Ctrl+Shift+OemMinus", () => history.CanGoForward),
             Line(),
             Item("Hide Solution Explorer", () => SetPane(ExplorerPane, false)),
             Item("Hide Toolbox", () => SetPane(ToolboxPane, false)),
             Item("Hide Bottom Panel", () => SetPanelVisible(false)),
             Line(),
-            Item("Zoom _In", () => SetFontSize(settings.FontSize + 1), "Ctrl+OemPlus"),
-            Item("Zoom O_ut", () => SetFontSize(settings.FontSize - 1), "Ctrl+OemMinus"),
+            Item("Zoom _In", () => SetFontSize(settings.FontSize + 1), "Ctrl+Shift+OemPeriod"),
+            Item("Zoom O_ut", () => SetFontSize(settings.FontSize - 1), "Ctrl+Shift+OemComma"),
             Item("Reset Zoom", () => SetFontSize(14), "Ctrl+D0"));
 
         Menu("_Project",
@@ -155,7 +174,7 @@ public partial class MainWindow : Window
             Item("CodeForge on _GitHub", () => Shell(Updater.ProjectPage)),
             Line(),
             Item("_About CodeForge", () => MessageBox.Show(this,
-                $"CodeForge {Updater.CurrentVersion}\nA small Visual Studio-style IDE for Windows.\n\n{Updater.ProjectPage}",
+                $"CodeForge {Updater.CurrentVersion}\nA small Visual Studio-style IDE for Windows.\n\nBy Ahmed Al-Bazzaz\n{Updater.ProjectPage}",
                 "About CodeForge", MessageBoxButton.OK, MessageBoxImage.Information)));
     }
 
@@ -164,6 +183,10 @@ public partial class MainWindow : Window
         NewProjectButton.Click += (_, _) => NewProject();
         OpenButton.Click += (_, _) => OpenFolder();
         SaveAllButton.Click += (_, _) => SaveAll();
+        BackButton.Click += (_, _) => NavigateBackward();
+        ForwardButton.Click += (_, _) => NavigateForward();
+        TaskList.MouseDoubleClick += (_, _) => { if (TaskList.SelectedItem is LocationRow row) OpenPath(row.FullPath, row.Line, row.Column); };
+        FindResults.MouseDoubleClick += (_, _) => { if (FindResults.SelectedItem is LocationRow row) OpenPath(row.FullPath, row.Line, row.Column); };
         UndoButton.Click += (_, _) => Undo();
         RedoButton.Click += (_, _) => Redo();
         StartButton.Click += (_, _) => Start();
@@ -178,7 +201,15 @@ public partial class MainWindow : Window
             StatusText.Text = "Configuration: " + settings.Configuration;
         };
 
-        DocumentTabs.SelectionChanged += (_, e) => { if (e.OriginalSource == DocumentTabs) DocumentSelected(); };
+        DocumentTabs.SelectionChanged += (_, e) =>
+        {
+            if (e.OriginalSource != DocumentTabs) return;
+            // Leaving a file is a place to come back to.
+            if (!navigatingHistory && e.RemovedItems.Count > 0 && e.RemovedItems[0] is TabItem { Tag: EditorDocument { Path: { } path } left })
+                history.Record(new Place(path, left.CaretPosition.Line));
+            DocumentSelected();
+        };
+        PanelTabs.SelectionChanged += (_, e) => { if (e.OriginalSource == PanelTabs && PanelTabs.SelectedItem == TaskListTab) RefreshTaskList(); };
         OutputInput.KeyDown += (_, e) =>
         {
             if (e.Key != Key.Enter) return;
@@ -218,8 +249,8 @@ public partial class MainWindow : Window
         {
             if (ExplorerTree.SelectedItem is not TreeViewItem { Tag: string path }) return;
             if (e.Key == Key.Enter && File.Exists(path)) OpenPath(path);
-            if (e.Key == Key.F2) RenameInExplorer(path);
-            if (e.Key == Key.Delete) DeleteInExplorer(path);
+            if (e.Key == Key.F2) { RenameInExplorer(path); e.Handled = true; }
+            if (e.Key == Key.Delete) { DeleteInExplorer(path); e.Handled = true; }
         };
 
         ToolboxSearch.TextChanged += (_, _) => UpdateToolbox();
@@ -277,6 +308,7 @@ public partial class MainWindow : Window
     private void SaveSession()
     {
         settings.Workspace = workspace;
+        foreach (var document in documents) StoreBookmarks(document);
         settings.OpenFiles = documents.Where(d => d.Path != null).Select(d => d.Path!).Concat(designers.Select(d => "design:" + d.CodePath)).ToList();
         settings.SelectedFile = Current?.Path ?? (CurrentDesigner != null ? "design:" + CurrentDesigner.CodePath : null);
         settings.WindowMaximized = WindowState == WindowState.Maximized;
@@ -525,6 +557,7 @@ public partial class MainWindow : Window
     {
         if (Directory.Exists(path)) { SetWorkspace(path); return; }
         if (!File.Exists(path)) return;
+        if (line != null && !navigatingHistory && CurrentPlace is { } here) history.Record(here);
         var document = documents.FirstOrDefault(d => SamePath(d.Path, path));
         if (document == null)
         {
@@ -554,6 +587,7 @@ public partial class MainWindow : Window
         document.Editor.MouseHoverStopped += (_, _) => { if (document.Editor.ToolTip is ToolTip tip) tip.IsOpen = false; document.Editor.ToolTip = null; };
         UpdateTab(document);
         document.SetDiagnostics(DiagnosticsFor(document));
+        if (document.Path != null && settings.Bookmarks.TryGetValue(document.Path, out var saved)) document.SetBookmarks(saved);
     }
 
     private void UpdateTab(EditorDocument document)
@@ -635,6 +669,8 @@ public partial class MainWindow : Window
         try
         {
             document.Save();
+            StoreBookmarks(document);
+            settings.Save();
             UpdateBranch();
             return true;
         }
@@ -692,6 +728,7 @@ public partial class MainWindow : Window
 
     private void RemoveDocument(EditorDocument document)
     {
+        StoreBookmarks(document);
         var index = documents.IndexOf(document);
         documents.Remove(document);
         document.Detach();
@@ -803,7 +840,10 @@ public partial class MainWindow : Window
         }
         var language = Current?.Language;
         var query = ToolboxSearch.Text.Trim();
-        var groups = language == null ? [] : ToolboxCatalog.Groups(language.Id);
+        var groups = language == null ? [] : ToolboxCatalog.Groups(language.Id).ToList();
+        // The code snippets for this language: they also expand from their shortcut with Tab.
+        if (language != null && Snippets.ForLanguage(language.Id).ToList() is { Count: > 0 } snippets)
+            groups.Add(new ToolboxGroup("Code Snippets", snippets.Select(s => s.ToolboxItem with { Name = $"{s.Title}  ({s.Shortcut})" }).ToList()));
         foreach (var group in groups)
         {
             var items = group.Items.Where(i => query.Length == 0 || i.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -973,6 +1013,127 @@ public partial class MainWindow : Window
         if (command.Trim().Length == 0) settings.RunCommands.Remove(workspace); else settings.RunCommands[workspace] = command.Trim();
         settings.Save();
         UpdateChrome();
+    }
+
+    // MARK: Find in Files, the Task List, bookmarks and navigation
+
+    private string? SelectedText => Current is { Editor.SelectionLength: > 0 } document ? document.Editor.SelectedText : null;
+
+    private FindInFilesWindow FindWindow => findWindow ??= new FindInFilesWindow(this);
+
+    private void ShowFindInFiles(bool replacing) => FindWindow.Open(replacing, SelectedText);
+
+    /// <summary>What Find in Files searches: the project folder, the current file's folder and the open files with their current text.</summary>
+    internal (string? Project, string? CurrentFolder, List<(string Path, string Text)> Open) SearchContext() =>
+        (workspace, Current?.Path is { } path ? Path.GetDirectoryName(path) : null,
+         documents.Where(d => d.Path != null).Select(d => (d.Path!, d.Editor.Text)).ToList());
+
+    internal void ShowFindResults(string summary, List<SearchMatch> matches)
+    {
+        FindSummary.Text = summary;
+        FindResults.ItemsSource = matches.Select(m => new LocationRow(m.Path, m.Line, m.Column, m.Preview.Trim())).ToList();
+        FindResultsTab.Header = matches.Count == 0 ? "Find Results" : $"Find Results  ({matches.Count})";
+        ShowPanel(FindResultsTab);
+    }
+
+    /// <summary>Replace in Files, for files open in tabs: through the editor, so Ctrl+Z undoes it. Returns the files it handled and the count.</summary>
+    internal (HashSet<string> Handled, int Count) ReplaceInOpenDocuments(System.Text.RegularExpressions.Regex expression, string replacement, bool regular, ISet<string> paths)
+    {
+        var handled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var count = 0;
+        foreach (var document in documents.Where(d => d.Path != null && paths.Contains(d.Path)))
+        {
+            var (text, replaced) = FileSearch.Replace(document.Editor.Text, expression, replacement, regular);
+            handled.Add(document.Path!);
+            if (replaced == 0) continue;
+            document.Editor.Document.Replace(0, document.Editor.Document.TextLength, text);
+            count += replaced;
+        }
+        return (handled, count);
+    }
+
+    internal void SetStatus(string text) => StatusText.Text = text;
+
+    private void ShowTaskList()
+    {
+        ShowPanel(TaskListTab);
+        RefreshTaskList();
+    }
+
+    /// <summary>Scans the project for TODO comments in the background; open files count with their current, possibly unsaved, text.</summary>
+    private void RefreshTaskList()
+    {
+        var folder = workspace;
+        var open = documents.Where(d => d.Path != null).Select(d => (Path: d.Path!, Text: d.Editor.Text, d.Language)).ToList();
+        Task.Run(() =>
+        {
+            var tasks = folder != null ? TaskScanner.InFolder(folder) : [];
+            foreach (var (path, text, language) in open)
+            {
+                tasks.RemoveAll(t => SamePath(t.Path, path));
+                tasks.AddRange(TaskScanner.Tasks(text, path, language));
+            }
+            var ordered = tasks.OrderBy(t => t.Path, StringComparer.OrdinalIgnoreCase).ThenBy(t => t.Line).ToList();
+            Dispatcher.Invoke(() =>
+            {
+                TaskList.ItemsSource = ordered.Select(t => new LocationRow(t.Path, t.Line, null, t.Text.Length == 0 ? t.Token : $"{t.Token}: {t.Text}")).ToList();
+                var files = ordered.Select(t => t.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+                TaskListSummary.Text = ordered.Count == 0 ? "No TODO, FIXME, HACK, UNDONE, BUG or XXX comments found."
+                    : $"{ordered.Count} task{(ordered.Count == 1 ? "" : "s")} in {files} file{(files == 1 ? "" : "s")}";
+                TaskListTab.Header = ordered.Count == 0 ? "Task List" : $"Task List  ({ordered.Count})";
+            });
+        });
+    }
+
+    private void StoreBookmarks(EditorDocument document)
+    {
+        if (document.Path == null) return;
+        var lines = document.BookmarkLines;
+        if (lines.Count == 0) settings.Bookmarks.Remove(document.Path); else settings.Bookmarks[document.Path] = lines;
+    }
+
+    private void ToggleBookmark()
+    {
+        if (Current is not { } document) return;
+        if (document.Path == null) { StatusText.Text = "Save the file first to bookmark it"; return; }
+        document.ToggleBookmark(document.CaretPosition.Line);
+        StoreBookmarks(document);
+        settings.Save();
+    }
+
+    private void GoToBookmark(bool backward)
+    {
+        foreach (var document in documents) StoreBookmarks(document);
+        var existing = settings.Bookmarks.Where(b => File.Exists(b.Key)).ToDictionary(b => b.Key, b => b.Value, StringComparer.OrdinalIgnoreCase);
+        var place = (Current?.Path ?? "", Current?.CaretPosition.Line ?? 0);
+        if (Bookmarks.Next(place, existing, backward) is { } target) OpenPath(target.Path, target.Line);
+        else StatusText.Text = "No bookmarks yet: toggle one with Ctrl+F2";
+    }
+
+    private void ClearBookmarks()
+    {
+        settings.Bookmarks.Clear();
+        foreach (var document in documents) document.SetBookmarks([]);
+        settings.Save();
+    }
+
+    private Place? CurrentPlace => Current is { Path: { } path } document ? new Place(path, document.CaretPosition.Line) : null;
+
+    private void GoTo(Place place)
+    {
+        navigatingHistory = true;
+        OpenPath(place.Path, place.Line);
+        navigatingHistory = false;
+    }
+
+    private void NavigateBackward()
+    {
+        if (history.TryGoBack(CurrentPlace ?? new Place("", 0), out var place)) GoTo(place);
+    }
+
+    private void NavigateForward()
+    {
+        if (CurrentPlace is { } here && history.TryGoForward(here, out var place)) GoTo(place);
     }
 
     // MARK: Windows Forms designer
@@ -1215,7 +1376,7 @@ public partial class MainWindow : Window
         StartButton.ToolTip = plan != null ? $"Start {plan.Name}: {plan.Run} (F5)" : "Start (F5)";
         StartButton.IsEnabled = !runner.IsRunning;
         StopButton.IsEnabled = runner.IsRunning;
-        StatusBar.Background = runner.IsRunning ? Themes.Brush("#CA5100") : workspace == null ? Themes.Brush("#68217A") : (Brush)Application.Current.Resources["AccentBrush"];
+        StatusBar.Background = runner.IsRunning ? Themes.Brush("#C2410C") : workspace == null ? Themes.Brush("#475569") : (Brush)Application.Current.Resources["AccentBrush"];
         StatusLanguage.Text = document?.Language.Name ?? (CurrentDesigner != null ? "Windows Forms Designer" : "");
         UpdatePosition();
     }
@@ -1267,8 +1428,23 @@ public partial class MainWindow : Window
             case "build": Build(); break;
             case "errors": ShowPanel(ErrorsTab); break;
             case "terminal": ShowPanel(TerminalTab); break;
-            case "dark": settings.Theme = "dark"; Themes.Apply("dark"); break;
-            case "blue": settings.Theme = "blue"; Themes.Apply("blue"); break;
+            case "dark" or "gray" or "midnight" or "light" or "blue" or "vs-dark" or "vs-light": settings.Theme = action; Themes.Apply(action); break;
+            case "tasks": ShowTaskList(); break;
+            case "report":
+                File.AppendAllText(Environment.GetEnvironmentVariable("CF_REPORT") ?? "report.txt", $"{Current?.DisplayName}:{Current?.CaretPosition.Line}\n");
+                break;
+            case "togglebookmark": ToggleBookmark(); break;
+            case "nextbookmark": GoToBookmark(false); break;
+            case "back": NavigateBackward(); break;
+            case "forward": NavigateForward(); break;
+            case "selectall": Current?.Editor.SelectAll(); break;
+            case var a when a.StartsWith("find:"): FindWindow.Run(a[5..]); break;
+            case var a when a.StartsWith("replace:"): FindWindow.RunReplace(a[8..].Split("=>")[0], a[8..].Split("=>")[1]); break;
+            case var a when a.StartsWith("goto:"): Current?.Reveal(int.Parse(a[5..])); break;
+            case var a when a.StartsWith("type:") && Current is { } typing:
+                typing.Editor.Document.Insert(typing.Editor.CaretOffset, a[5..].Replace("\\n", "\n"));
+                if (a.EndsWith("\\t")) { typing.Editor.Document.Remove(typing.Editor.CaretOffset - 2, 2); typing.ExpandSnippet(); }
+                break;
             case "newproject": Dispatcher.BeginInvoke(NewProject); break;
             case "options": Dispatcher.BeginInvoke(ShowOptions); break;
             case "find": ShowFind(); break;

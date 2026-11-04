@@ -10,24 +10,47 @@ public static class Themes
 {
     public sealed record Palette(bool IsDark,
         string Window, string Panel, string Chrome, string Border, string Text, string SubtleText, string Accent,
-        string Editor, string EditorText, string LineNumbers, string CurrentLine, string Selection, string TabSelected);
+        string Editor, string EditorText, string LineNumbers, string CurrentLine, string Selection, string TabSelected,
+        string Comment, string String, string Keyword, string Type, string Number, string Function);
 
     private static readonly Dictionary<string, Palette> Palettes = new()
     {
-        ["light"] = new(false, "#EEEEF2", "#F5F5F5", "#EEEEF2", "#CCCEDB", "#1E1E1E", "#6D6D6D", "#007ACC",
-                        "#FFFFFF", "#1E1E1E", "#2B91AF", "#0F000000", "#ADD6FF", "#FFFFFF"),
-        ["dark"] = new(true, "#2D2D30", "#252526", "#2D2D30", "#3F3F46", "#F1F1F1", "#9D9D9D", "#007ACC",
-                       "#1E1E1E", "#D4D4D4", "#858585", "#14FFFFFF", "#264F78", "#1E1E1E"),
+        // The default look: calm neutrals, one indigo accent, and softer syntax colors.
+        ["light"] = new(false, "#F1F3F6", "#F8F9FB", "#F1F3F6", "#E2E5EA", "#1F2937", "#6B7280", "#4F5BD5",
+                        "#FFFFFF", "#1F2937", "#9CA3AF", "#0F000000", "#C7D2FE", "#FFFFFF",
+                        "#6B7280", "#047857", "#6D3FC9", "#0E7490", "#B45309", "#2563EB"),
+        ["dark"] = new(true, "#22252C", "#1B1E24", "#22252C", "#2E323B", "#E4E7EC", "#9097A3", "#6E7BF2",
+                       "#16181D", "#E4E7EC", "#5A6270", "#12FFFFFF", "#33407A", "#16181D",
+                       "#6B7686", "#8FD4A6", "#B69CFF", "#6FD3E8", "#F2B872", "#7FB4FF"),
+        // The second dark option: neutral graphite grays with a soft teal accent.
+        ["gray"] = new(true, "#3B3C41", "#333438", "#3B3C41", "#4A4B50", "#DADBDD", "#A3A5AA", "#3E9C92",
+                       "#2B2C2F", "#DADBDD", "#6F7176", "#14FFFFFF", "#4A5A5C", "#2B2C2F",
+                       "#85878C", "#A8C992", "#8FBBD9", "#7CC7BC", "#DDB779", "#D8C48F"),
+        ["midnight"] = new(true, "#1A2540", "#131D33", "#1A2540", "#27344F", "#E2E8F0", "#94A3B8", "#2F8FD0",
+                           "#0F172A", "#E2E8F0", "#475569", "#12FFFFFF", "#264B73", "#0F172A",
+                           "#64748B", "#86EFAC", "#C4B5FD", "#67E8F9", "#FDBA74", "#7DD3FC"),
+        // Visual Studio's own colors.
+        ["vs-light"] = new(false, "#EEEEF2", "#F5F5F5", "#EEEEF2", "#CCCEDB", "#1E1E1E", "#6D6D6D", "#007ACC",
+                           "#FFFFFF", "#1E1E1E", "#2B91AF", "#0F000000", "#ADD6FF", "#FFFFFF",
+                           "#008000", "#A31515", "#0000FF", "#2B91AF", "#098658", "#74531F"),
+        ["vs-dark"] = new(true, "#2D2D30", "#252526", "#2D2D30", "#3F3F46", "#F1F1F1", "#9D9D9D", "#007ACC",
+                          "#1E1E1E", "#D4D4D4", "#858585", "#14FFFFFF", "#264F78", "#1E1E1E",
+                          "#6A9955", "#CE9178", "#569CD6", "#4EC9B0", "#B5CEA8", "#DCDCAA"),
         ["blue"] = new(false, "#CCD5F0", "#F0F3FA", "#CCD5F0", "#8E9BBC", "#1E1E1E", "#4D5A7A", "#0E639C",
-                       "#FFFFFF", "#1E1E1E", "#2B91AF", "#0F000000", "#ADD6FF", "#FFFFFF"),
+                       "#FFFFFF", "#1E1E1E", "#2B91AF", "#0F000000", "#ADD6FF", "#FFFFFF",
+                       "#008000", "#A31515", "#0000FF", "#2B91AF", "#098658", "#74531F"),
     };
 
-    public static string[] Names { get; } = ["system", "light", "dark", "blue"];
+    public static string[] Names { get; } = ["system", "light", "dark", "gray", "midnight", "vs-light", "vs-dark", "blue"];
     public static string Title(string name) => name switch
     {
-        "system" => "Use system setting (Light or Dark)",
-        "light" => "Light",
-        "dark" => "Dark",
+        "system" => "Use system setting (Modern Light or Dark)",
+        "light" => "Modern Light",
+        "dark" => "Modern Dark",
+        "gray" => "Gray",
+        "midnight" => "Midnight",
+        "vs-light" => "Visual Studio Light",
+        "vs-dark" => "Visual Studio Dark",
         "blue" => "Blue",
         _ => name,
     };

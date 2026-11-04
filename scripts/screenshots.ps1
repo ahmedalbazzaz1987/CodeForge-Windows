@@ -52,6 +52,33 @@ foreach ($project in "LoginVB", "FormsCS") {
     if ($LASTEXITCODE -ne 0) { $failed += "$project (the designer's code doesn't compile)" }
 }
 
+# Find in Files, Replace in Files, the Task List, snippets, bookmarks and navigation.
+$demo = "$work\ToolsDemo"
+New-Item -ItemType Directory -Force $demo | Out-Null
+Set-Content "$demo\first.py" "# TODO: read the total from a file`r`ntotal = 1`r`nprint(total)`r`n"
+Set-Content "$demo\second.py" "# FIXME: rename this`r`noldname = 2`r`nprint(oldname)`r`nnote = 'TODO not a task'`r`n"
+Set-Content "$demo\app.cs" "class App`r`n{`r`n}`r`n"
+Shot "10-gray-task-list" @{ CF_OPEN = "$demo;$demo\first.py"; CF_ACTIONS = "gray,tasks"; CF_DELAY = "8" }
+Shot "11-midnight-find" @{ CF_OPEN = "$demo;$demo\first.py"; CF_ACTIONS = "midnight,find:total"; CF_DELAY = "8" }
+
+# Replace in a closed file and in an open one (saved afterwards).
+Shot "12-replace" @{ CF_OPEN = "$demo;$demo\first.py"; CF_ACTIONS = "replace:oldname=>newname,replace:total=>sum,saveall" }
+if (-not (Select-String -Path "$demo\second.py" -SimpleMatch "newname = 2" -Quiet)) { $failed += "Replace in Files (closed file)" }
+if (-not (Select-String -Path "$demo\first.py" -SimpleMatch "sum = 1" -Quiet)) { $failed += "Replace in Files (open file)" }
+
+# A snippet from Tab; a bookmark that follows its line when two lines go in above it.
+Shot "13-snippet-bookmark" @{ CF_OPEN = "$demo;$demo\app.cs"; CF_ACTIONS = "goto:3,togglebookmark,goto:1,type:prop\t\n\n,saveall" }
+if (-not (Select-String -Path "$demo\app.cs" -SimpleMatch "public int MyProperty { get; set; }" -Quiet)) { $failed += "Snippet expansion" }
+$saved = Get-Content "$work\settings-13-snippet-bookmark\settings.json" -Raw | ConvertFrom-Json
+$lines = @($saved.Bookmarks."$demo\app.cs")
+if ($lines -notcontains 5) { $failed += "Bookmark didn't follow its line (lines: $($lines -join ','))" }
+
+# Navigate Backward and Forward between two files.
+$report = "$work\navigation.txt"
+Shot "14-navigation" @{ CF_OPEN = "$demo;$demo\first.py;$demo\second.py"; CF_ACTIONS = "report,back,report,forward,report"; CF_REPORT = $report }
+$visited = (Get-Content $report | ForEach-Object { ($_ -split ":")[0] }) -join ","
+if ($visited -ne "second.py,first.py,second.py") { $failed += "Navigation went: $visited" }
+
 if (Test-Path "$env:APPDATA\CodeForge\errors.log") { Get-Content "$env:APPDATA\CodeForge\errors.log" }
 Get-ChildItem $work -Filter errors.log -Recurse | ForEach-Object { Write-Host "== $($_.FullName)"; Get-Content $_.FullName }
 if ($failed.Count -gt 0) { throw "Screenshots failed: $($failed -join ', ')" }

@@ -9,7 +9,9 @@
     <RootNamespace>CodeForge</RootNamespace>
     <ApplicationIcon>CodeForge.ico</ApplicationIcon>
     <Product>CodeForge</Product>
-    <Company>Ahmed Albazzaz</Company>
+    <Company>Ahmed Al-Bazzaz</Company>
+    <Authors>Ahmed Al-Bazzaz</Authors>
+    <Copyright>Copyright © 2026 Ahmed Al-Bazzaz</Copyright>
     <Description>A small Visual Studio-style IDE for Windows</Description>
     <!-- Releases are framework-dependent: small, and they run on any PC with the .NET 10 Desktop Runtime. -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>

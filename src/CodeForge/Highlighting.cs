@@ -12,29 +12,29 @@ namespace CodeForge;
 
 /// <summary>
 /// Syntax highlighting for each language and theme. Languages AvalonEdit knows use its definitions, recolored for dark
-/// themes (VS Code-like colors); others get a definition made from their keywords, comments and strings.
+/// themes; others get a definition made from their keywords, comments and strings.
 /// </summary>
 public static partial class Highlighting
 {
-    private static readonly Dictionary<(string, bool), IHighlightingDefinition?> Cache = [];
+    private static readonly Dictionary<(string, Themes.Palette), IHighlightingDefinition?> Cache = [];
     private static Dictionary<string, string>? builtInXml;
 
-    public static IHighlightingDefinition? For(Language language, bool dark)
+    public static IHighlightingDefinition? For(Language language, Themes.Palette palette)
     {
-        var key = (language.Id, dark);
+        var key = (language.Id, palette);
         if (Cache.TryGetValue(key, out var cached)) return cached;
         IHighlightingDefinition? definition = null;
         try
         {
             if (language.Highlighting != null)
             {
-                definition = dark && BuiltInXml().TryGetValue(language.Highlighting, out var xml)
-                    ? Load(Recolor(xml))
+                definition = BuiltInXml().TryGetValue(language.Highlighting, out var xml)
+                    ? Load(Recolor(xml, palette))
                     : HighlightingManager.Instance.GetDefinition(language.Highlighting);
             }
             else if (language.KeywordList.Any() || language.LineComment != null)
             {
-                definition = Load(Generate(language, dark));
+                definition = Load(Generate(language, palette));
             }
         }
         catch (Exception)
@@ -74,24 +74,25 @@ public static partial class Highlighting
     [GeneratedRegex(@"foreground=""([^""]+)""")]
     private static partial Regex ForegroundAttribute();
 
-    /// <summary>Lightens the dark text colors of a light-theme definition so they read on a dark background.</summary>
-    private static string Recolor(string xml) => ForegroundAttribute().Replace(xml, match =>
+    /// <summary>Gives a built-in definition the theme's syntax colors, by what each original color means.</summary>
+    private static string Recolor(string xml, Themes.Palette palette) => ForegroundAttribute().Replace(xml, match =>
     {
         var original = match.Groups[1].Value;
         var named = original.ToLowerInvariant() switch
         {
-            "green" or "darkgreen" or "seagreen" => "#6A9955",
-            "blue" or "darkblue" or "navy" or "mediumblue" => "#569CD6",
-            "red" or "darkred" or "brown" or "maroon" or "firebrick" or "sienna" => "#CE9178",
-            "black" => "#D4D4D4",
-            "gray" or "grey" or "dimgray" or "darkgray" => "#9B9B9B",
-            "teal" or "darkcyan" => "#4EC9B0",
-            "purple" or "darkmagenta" or "darkviolet" or "blueviolet" => "#C586C0",
-            "olive" or "darkgoldenrod" or "darkorange" => "#DCDCAA",
-            "magenta" => "#D16969",
+            "green" or "darkgreen" or "seagreen" => palette.Comment,
+            "blue" or "darkblue" or "navy" or "mediumblue" => palette.Keyword,
+            "red" or "darkred" or "brown" or "maroon" or "firebrick" or "sienna" => palette.String,
+            "black" => palette.EditorText,
+            "gray" or "grey" or "dimgray" or "darkgray" => palette.Comment,
+            "teal" or "darkcyan" => palette.Type,
+            "purple" or "darkmagenta" or "darkviolet" or "blueviolet" => palette.Keyword,
+            "olive" or "darkgoldenrod" or "darkorange" => palette.Function,
+            "magenta" => palette.Number,
             _ => null,
         };
         if (named != null) return $"foreground=\"{named}\"";
+        if (!palette.IsDark) return match.Value;
         try
         {
             var color = (Color)ColorConverter.ConvertFromString(original);
@@ -113,12 +114,9 @@ public static partial class Highlighting
     }
 
     /// <summary>An .xshd definition from a language's keywords, types, comments and string delimiters.</summary>
-    private static string Generate(Language language, bool dark)
+    private static string Generate(Language language, Themes.Palette colors)
     {
         string Escape(string value) => SecurityElement.Escape(value) ?? value;
-        var colors = dark
-            ? new { Comment = "#6A9955", String = "#CE9178", Keyword = "#569CD6", Type = "#4EC9B0", Number = "#B5CEA8" }
-            : new { Comment = "#008000", String = "#A31515", Keyword = "#0000FF", Type = "#2B91AF", Number = "#098658" };
         var xml = new StringBuilder();
         xml.Append($"""<SyntaxDefinition name="{Escape(language.Name)}" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">""");
         xml.Append($"""<Color name="Comment" foreground="{colors.Comment}"/><Color name="String" foreground="{colors.String}"/>""");

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0
+
+A modern look, and more of Visual Studio's everyday tools. By Ahmed Al-Bazzaz.
+
+- **New color themes** in Tools ▸ Options: **Modern Light** and **Modern Dark** (the new defaults, with calm neutrals, an
+  indigo accent and softer syntax colors), **Gray** (a second dark option in neutral graphite with a teal accent) and
+  **Midnight** (deep navy). Visual Studio's own Light, Dark and Blue are still there.
+- **Find in Files and Replace in Files** (Ctrl+Shift+F, Ctrl+Shift+H): the whole project, the current folder or the open
+  documents, with match case, whole word, regular expressions and file types. Results go to a new **Find Results** tab;
+  replacing in open files can be undone with Ctrl+Z.
+- **Task List** (Ctrl+Alt+K): every TODO, FIXME, HACK, UNDONE, BUG and XXX comment in the project.
+- **Bookmarks** (Edit menu): Toggle (Ctrl+F2), Next (F2), Previous (Shift+F2) and Clear All. They stay on their code as you
+  edit, and are remembered between sessions.
+- **Navigate Backward and Forward** (Ctrl+- and Ctrl+Shift+-, with toolbar buttons), like Visual Studio. Zoom moved to
+  Ctrl+Shift+. and Ctrl+Shift+, as in Visual Studio.
+- **Code snippets**: type a shortcut (`prop`, `ctor`, `foreach`, `cw`, `Sub`, `For`, `Try`…) and press Tab. 75 snippets for
+  VB.NET, C#, Python, JavaScript, Swift and HTML, also listed in the Toolbox.
+- The app, the installer and the license now credit **Ahmed Al-Bazzaz**.
+
 ## 0.2.1
 
 - **CodeForge now has an installer** (`CodeForge-0.2.1-setup.exe`): a setup wizard that installs for your user account

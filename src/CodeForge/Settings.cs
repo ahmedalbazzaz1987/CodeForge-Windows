@@ -24,6 +24,8 @@ public sealed class Settings
     public bool PanelVisible { get; set; } = true;
     /// <summary>Custom run commands per project folder (Debug ▸ Set Run Command).</summary>
     public Dictionary<string, string> RunCommands { get; set; } = [];
+    /// <summary>Bookmarked lines per file (Edit ▸ Bookmarks).</summary>
+    public Dictionary<string, List<int>> Bookmarks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public double[]? WindowBounds { get; set; }
     public bool WindowMaximized { get; set; }
 
