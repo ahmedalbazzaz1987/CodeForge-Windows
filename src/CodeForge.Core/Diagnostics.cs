@@ -14,7 +14,8 @@ public sealed record Diagnostic(Severity Severity, string Message, string File, 
 
 /// <summary>
 /// Reads compiler and runtime error formats from plain output: MSBuild and TypeScript (<c>file(line,col): error CODE: message</c>),
-/// clang/gcc/go/javac (<c>file:line:col: error: message</c>), Rust, Python tracebacks and Node.js stack traces.
+/// clang/gcc/go/javac (<c>file:line:col: error: message</c>), Rust, Python tracebacks, Node.js stack traces, and .NET
+/// unhandled exceptions and failed tests (the first stack frame with a file and line).
 /// Windows paths with drive letters (<c>C:\…</c>) are understood.
 /// </summary>
 public static partial class DiagnosticParser
@@ -40,6 +41,15 @@ public static partial class DiagnosticParser
     [GeneratedRegex(@"^((?:[A-Za-z_][\w.]*)?(?:Error|Exception|Warning|Interrupt|Exit)(?::.*)?)$")]
     private static partial Regex ExceptionLine();
 
+    [GeneratedRegex(@"^Unhandled exception\. (.+)$")]
+    private static partial Regex DotNetUnhandled();
+
+    [GeneratedRegex(@"^\s*Failed (\S+) \[")]
+    private static partial Regex DotNetFailedTest();
+
+    [GeneratedRegex(@"^\s+at .+ in (.+):line (\d+)\s*$")]
+    private static partial Regex DotNetFrame();
+
     public static List<Diagnostic> Parse(string output)
     {
         var results = new List<Diagnostic>();
@@ -51,11 +61,28 @@ public static partial class DiagnosticParser
 
         (Severity Severity, string Message)? pendingRust = null;
         (string File, int Line)? pendingFrame = null;   // last Python/Node location, waiting for its exception line
+        string? pendingDotNet = null;                    // a .NET exception or failed test, waiting for its first frame with a file
+        var testMessageNext = false;
 
         foreach (var raw in output.Split('\n'))
         {
             var line = raw.TrimEnd('\r');
             Match match;
+            if ((match = DotNetUnhandled().Match(line)).Success) { pendingDotNet = match.Groups[1].Value; continue; }
+            if ((match = DotNetFailedTest().Match(line)).Success) { pendingDotNet = "Test failed: " + match.Groups[1].Value; continue; }
+            if (pendingDotNet != null && line.Trim() == "Error Message:") { testMessageNext = true; continue; }
+            if (testMessageNext && pendingDotNet != null && line.Trim().Length > 0)
+            {
+                pendingDotNet += " — " + line.Trim();
+                testMessageNext = false;
+                continue;
+            }
+            if (pendingDotNet != null && (match = DotNetFrame().Match(line)).Success)
+            {
+                Add(new Diagnostic(Severity.Error, pendingDotNet, match.Groups[1].Value, int.Parse(match.Groups[2].Value)));
+                pendingDotNet = null;
+                continue;
+            }
             if ((match = RustHeader().Match(line)).Success)
             {
                 pendingRust = (match.Groups[1].Value == "warning" ? Severity.Warning : Severity.Error, match.Groups[2].Value);

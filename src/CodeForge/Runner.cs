@@ -1,16 +1,27 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Threading;
+using CodeForge.Core;
 
 namespace CodeForge;
 
 /// <summary>
-/// Runs one command at a time through cmd.exe and streams its output (both streams) as it arrives, so prompts that
-/// don't end with a line break still show. Input typed in the Output window goes to the program's stdin.
+/// Runs one command at a time through cmd.exe and streams its output (both streams) line by line, so stdout and stderr
+/// don't cut into each other's lines; a prompt without a line break still shows after a short pause. Input typed in the
+/// Output window goes to the program's stdin. Everything is UTF-8: the console's code page is switched to 65001 before
+/// the command runs, so Arabic input, output and paths (dotnet build's file names too) come through intact.
 /// </summary>
 public sealed class Runner
 {
+    /// <summary>How long a partial line (a prompt such as "Name: ") waits for the rest before it's shown.</summary>
+    private static readonly TimeSpan PartialLineDelay = TimeSpan.FromMilliseconds(120);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint SetErrorMode(uint mode);
+    private const uint FailCriticalErrors = 0x0001, NoGpFaultErrorBox = 0x0002;
+
     private Process? process;
     private readonly Stopwatch clock = new();
     private readonly Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
@@ -30,7 +41,7 @@ public sealed class Runner
         var info = new ProcessStartInfo("cmd.exe")
         {
             // /s keeps the quotes in the command as they are; /d skips AutoRun scripts.
-            Arguments = "/d /s /c \"" + command + "\"",
+            Arguments = "/d /s /c \"chcp 65001 >nul & " + command + "\"",
             WorkingDirectory = folder,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -39,6 +50,8 @@ public sealed class Runner
             CreateNoWindow = true,
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
+            // No byte order mark: it would reach the program as the first character it reads.
+            StandardInputEncoding = new UTF8Encoding(false),
         };
         info.Environment["PYTHONUNBUFFERED"] = "1";
         info.Environment["PYTHONIOENCODING"] = "utf-8";
@@ -47,6 +60,9 @@ public sealed class Runner
         if (environment != null) foreach (var (key, value) in environment) info.Environment[key] = value;
 
         var started = new Process { StartInfo = info, EnableRaisingEvents = true };
+        // Child processes inherit the error mode. Without the crash dialog, Windows Error Reporting doesn't hold a crashed
+        // program (an unhandled .NET exception) for half a minute before it ends.
+        var previousMode = SetErrorMode(FailCriticalErrors | NoGpFaultErrorBox);
         try
         {
             started.Start();
@@ -56,6 +72,10 @@ public sealed class Runner
             Output?.Invoke($"Couldn't start the command: {error.Message}\n", true);
             Exited?.Invoke(-1, 0);
             return;
+        }
+        finally
+        {
+            SetErrorMode(previousMode);
         }
         process = started;
         clock.Restart();
@@ -77,12 +97,23 @@ public sealed class Runner
     private Task Pump(StreamReader reader, bool isError) => Task.Run(async () =>
     {
         var buffer = new char[4096];
-        int count;
-        while ((count = await reader.ReadAsync(buffer, 0, buffer.Length)) > 0)
+        var lines = new StreamLines();
+        async Task Show(string text)
         {
-            var text = new string(buffer, 0, count).Replace("\r\n", "\n");
-            await dispatcher.InvokeAsync(() => Output?.Invoke(text, isError));
+            text = ConsoleText.StripAnsi(text);
+            if (text.Length > 0) await dispatcher.InvokeAsync(() => Output?.Invoke(text, isError));
         }
+        while (true)
+        {
+            var read = reader.ReadAsync(buffer, 0, buffer.Length);
+            // A partial line (a prompt) is shown once the program pauses.
+            if (lines.Pending.Length > 0 && await Task.WhenAny(read, Task.Delay(PartialLineDelay)) != read)
+                await Show(lines.Flush());
+            var count = await read;
+            if (count <= 0) break;
+            await Show(lines.Add(new string(buffer, 0, count)));
+        }
+        await Show(lines.Flush());
     });
 
     public void Send(string line)

@@ -118,9 +118,9 @@
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
                                         <GridViewColumn Header="Code" Width="80" DisplayMemberBinding="{Binding Code}"/>
-                                        <GridViewColumn Header="Description" Width="560" DisplayMemberBinding="{Binding Message}"/>
-                                        <GridViewColumn Header="File" Width="170" DisplayMemberBinding="{Binding FileName}"/>
-                                        <GridViewColumn Header="Line" Width="60" DisplayMemberBinding="{Binding Line}"/>
+                                        <GridViewColumn Header="Description" Width="420" DisplayMemberBinding="{Binding Message}"/>
+                                        <GridViewColumn Header="File" Width="140" DisplayMemberBinding="{Binding FileName}"/>
+                                        <GridViewColumn Header="Line" Width="50" DisplayMemberBinding="{Binding Line}"/>
                                     </GridView>
                                 </ListView.View>
                             </ListView>

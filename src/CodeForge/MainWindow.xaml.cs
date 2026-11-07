@@ -71,7 +71,7 @@ public partial class MainWindow : Window
             var command = new RelayCommand(action, enabled);
             if (gesture.Length > 0 && new KeyGestureConverter().ConvertFromString(gesture) is KeyGesture key)
                 InputBindings.Add(new KeyBinding(command, key));
-            return new MenuItem { Header = header, Command = command, InputGestureText = gesture };
+            return new MenuItem { Header = header, Command = command, InputGestureText = KeyNames.Display(gesture) };
         }
         Separator Line() => new();
         bool HasFolder() => workspace != null;
@@ -602,7 +602,8 @@ public partial class MainWindow : Window
         documents.Add(document);
         var tab = new TabItem { Tag = document, Content = document.Editor };
         DocumentTabs.Items.Add(tab);
-        document.StateChanged += () => { UpdateTab(document); UpdateChrome(); };
+        // Saving changes the size and date in the Properties window.
+        document.StateChanged += () => { UpdateTab(document); UpdateChrome(); if (document == Current && !document.IsDirty) ShowFileProperties(); };
         document.CaretMoved += UpdatePosition;
         document.Editor.TextArea.PreviewMouseDown += (_, _) => { };
         document.Editor.MouseHover += (_, e) =>
@@ -654,6 +655,11 @@ public partial class MainWindow : Window
         DocumentSelected();
     }
 
+    private void ShowFileProperties()
+    {
+        if (CurrentDesigner == null) properties.ShowFile(Current?.Path, Current?.Language.Name, Current?.Editor.LineCount, Current?.EncodingName);
+    }
+
     private void DocumentSelected()
     {
         StartPage.Visibility = OpenTabs == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -661,6 +667,7 @@ public partial class MainWindow : Window
         if (OpenTabs == 0) StartPageView.Fill(StartPage, this);
         if (Current is { } document) Dispatcher.BeginInvoke(() => document.Editor.TextArea.Focus(), System.Windows.Threading.DispatcherPriority.Input);
         properties.Show(CurrentDesigner?.Surface);
+        ShowFileProperties();
         if (CurrentDesigner is { } designer)
         {
             designer.Surface.Select(designer.Surface.SelectedName);
@@ -881,15 +888,30 @@ public partial class MainWindow : Window
             ToolboxTree.Items.Add(node);
         }
         ToolboxEmpty.Text = language == null ? "Open a file to see its controls and snippets."
-            : groups.Count == 0 ? $"There are no Toolbox items for {language.Name} files. Open a XAML, HTML, Razor, C#, VB.NET, Python, JavaScript, TypeScript, C, C++, Java, Go or Rust file."
+            : groups.Count == 0 ? $"There are no Toolbox items for {language.Name} files. Open a XAML, HTML, Razor, C#, VB.NET, F#, Python, JavaScript, TypeScript, C, C++, Java, Go or Rust file."
             : "No matches.";
         ToolboxEmpty.Visibility = ToolboxTree.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    /// <summary>The last Toolbox insertion, while nothing has been typed since: (document, end of the inserted text, document length and caret right after it).</summary>
+    private (EditorDocument Document, ICSharpCode.AvalonEdit.Document.TextAnchor End, int Length, int Caret)? lastToolboxInsert;
 
     private void InsertToolboxItem(ToolboxItem item)
     {
         if (Current is not { IsReadOnly: false } document) return;
         var editor = document.Editor;
+        // Inserting twice in a row puts the second item after the first, on its own line, rather than inside it
+        // (the caret is left inside the first, ready for its content).
+        if (lastToolboxInsert is { } last && last.Document == document && !last.End.IsDeleted && editor.SelectionLength == 0 &&
+            editor.Document.TextLength == last.Length && editor.CaretOffset == last.Caret)
+        {
+            var endLine = editor.Document.GetLineByOffset(last.End.Offset);
+            var endIndent = new string(editor.Document.GetText(endLine).TakeWhile(char.IsWhiteSpace).ToArray());
+            var at = last.End.Offset;
+            var gap = Environment.NewLine + endIndent;
+            editor.Document.Insert(at, gap);
+            editor.CaretOffset = at + gap.Length;
+        }
         var line = editor.Document.GetLineByOffset(editor.CaretOffset);
         var lineText = editor.Document.GetText(line);
         var indent = new string(lineText.TakeWhile(char.IsWhiteSpace).ToArray());
@@ -897,6 +919,8 @@ public partial class MainWindow : Window
         var start = editor.SelectionStart;
         editor.Document.Replace(start, editor.SelectionLength, text);
         editor.CaretOffset = start + cursor;
+        var end = editor.Document.CreateAnchor(start + text.Length);
+        lastToolboxInsert = (document, end, editor.Document.TextLength, editor.CaretOffset);
         editor.TextArea.Focus();
     }
 
@@ -939,6 +963,15 @@ public partial class MainWindow : Window
         }
         if (document.Path == null && !SaveAs(document)) return;
         if (document.IsDirty && !Save(document)) return;
+        if (document.Language.Id is "html")
+        {
+            ShowPanel(OutputTab);
+            OutputText.Clear();
+            AppendOutput($"Opening {document.DisplayName} in your browser…\n");
+            Shell(document.Path!);
+            StatusText.Text = $"Opened {document.DisplayName}";
+            return;
+        }
         if (document.Language.RunCommand is not { } template)
         {
             ShowError($"CodeForge doesn't know how to run {document.Language.Name} files", "Open the project folder to run the whole project, or use Debug ▸ Set Run Command….");
@@ -990,13 +1023,13 @@ public partial class MainWindow : Window
             UpdateChrome();
             return;
         }
-        AppendOutput($"\n[Finished with exit code {code} in {seconds:0.00}s]\n");
+        AppendOutput($"\n[Finished with exit code {ExitCodes.Describe(code)} in {seconds:0.00}s]\n");
         if (code is 9009 or 1 && runningLanguage?.InstallHint is { } hint && OutputText.Text.Contains("is not recognized"))
             AppendOutput($"A required tool wasn't found. {hint}\n");
         diagnostics = DiagnosticParser.Parse(OutputText.Text);
         RefreshDiagnostics();
         var errors = diagnostics.Count(d => d.Severity == Severity.Error);
-        StatusText.Text = code == 0 ? $"Finished in {seconds:0.00}s" : errors > 0 ? $"Failed — {errors} error{(errors == 1 ? "" : "s")}" : $"Failed (exit code {code})";
+        StatusText.Text = code == 0 ? $"Finished in {seconds:0.00}s" : errors > 0 ? $"Failed — {errors} error{(errors == 1 ? "" : "s")}" : $"Failed (exit code {ExitCodes.Describe(code)})";
         if (code != 0 && errors > 0) ShowPanel(ErrorsTab);
         UpdateChrome();
         UpdateBranch();
@@ -1233,7 +1266,8 @@ public partial class MainWindow : Window
         designers.Add(designer);
         DocumentTabs.Items.Add(new TabItem { Tag = designer, Content = designer.Surface });
         designer.StateChanged += () => { UpdateTab(designer); UpdateChrome(); };
-        designer.Surface.HandlerRequested += name => AddEventHandler(designer, name);
+        // After the double-click's own mouse handling, which would otherwise keep the designer in front.
+        designer.Surface.HandlerRequested += name => Dispatcher.BeginInvoke(() => AddEventHandler(designer, name), System.Windows.Threading.DispatcherPriority.Background);
         designer.Surface.ViewCodeRequested += () => OpenPath(designer.CodePath);
         designer.Surface.ToolUsed += () => { if (CurrentDesigner == designer) UpdateToolbox(); };
         designer.Surface.Renamed += (oldName, newName) => RenameInCode(designer, oldName, newName);

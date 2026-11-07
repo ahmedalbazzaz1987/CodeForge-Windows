@@ -57,6 +57,7 @@ public sealed class EditorDocument
         bookmarkRenderer = new BookmarkRenderer(bookmarks);
         Editor.TextArea.TextView.BackgroundRenderers.Add(bookmarkRenderer);
         Editor.TextArea.PreviewKeyDown += ExpandSnippetOnTab;
+        GroupTypingForUndo();
         Editor.TextChanged += (_, _) =>
         {
             diagnostics.Clear();   // positions are stale after an edit
@@ -66,6 +67,55 @@ public sealed class EditorDocument
         Editor.TextArea.Caret.PositionChanged += (_, _) => CaretMoved?.Invoke();
         ApplyTheme();
         Themes.Changed += ApplyTheme;
+    }
+
+    /// <summary>"UTF-8", "UTF-8 with BOM", "UTF-16 LE"…, for the Properties window.</summary>
+    public string EncodingName => encoding switch
+    {
+        UTF8Encoding utf8 => utf8.GetPreamble().Length > 0 ? "UTF-8 with BOM" : "UTF-8",
+        UnicodeEncoding { CodePage: 1201 } => "UTF-16 BE",
+        UnicodeEncoding => "UTF-16 LE",
+        var other => other.WebName.ToUpperInvariant(),
+    };
+
+    /// <summary>
+    /// Ctrl+Z undoes typing a word at a time, like Visual Studio, instead of one character at a time: characters typed one
+    /// after another (with nothing else changing the text in between) join the previous undo step. A space or line break
+    /// starts a new step.
+    /// </summary>
+    private void GroupTypingForUndo()
+    {
+        var changes = 0;
+        var typedAfter = -1;     // the change count right after the last typed character
+        var typedEnd = -1;       // the caret right after it
+        var typedAt = DateTime.MinValue;
+        var continuing = false;
+        Editor.Document.Changed += (_, _) => changes++;
+        // If another handler (IntelliSense) took the keystroke, TextEntered never comes: close the group here instead.
+        void CloseDangling()
+        {
+            if (!continuing) return;
+            continuing = false;
+            Editor.Document.UndoStack.EndUndoGroup();
+        }
+        Editor.TextArea.PreviewKeyDown += (_, _) => CloseDangling();
+        Editor.TextArea.LostKeyboardFocus += (_, _) => CloseDangling();
+        Editor.TextArea.TextEntering += (_, e) =>
+        {
+            CloseDangling();
+            var stack = Editor.Document.UndoStack;
+            continuing = e.Text.Length == 1 && !char.IsWhiteSpace(e.Text[0]) && stack.CanUndo && changes == typedAfter &&
+                         Editor.CaretOffset == typedEnd && Editor.SelectionLength == 0 && (DateTime.Now - typedAt).TotalSeconds < 3;
+            if (continuing) stack.StartContinuedUndoGroup();
+        };
+        Editor.TextArea.TextEntered += (_, _) =>
+        {
+            if (continuing) Editor.Document.UndoStack.EndUndoGroup();
+            continuing = false;
+            typedAfter = changes;
+            typedEnd = Editor.CaretOffset;
+            typedAt = DateTime.Now;
+        };
     }
 
     public static EditorDocument Open(string path)

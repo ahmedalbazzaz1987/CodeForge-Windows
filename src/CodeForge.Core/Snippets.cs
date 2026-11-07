@@ -63,6 +63,16 @@ public static class Snippets
         new("svm", "static void Main", "csharp", "static void Main(string[] args)\n{\n    $0\n}"),
         new("async", "Async method", "csharp", "public async Task $0MethodAsync()\n{\n    await Task.Delay(1);\n}"),
         new("test", "xUnit test", "csharp", "[Fact]\npublic void $0Test()\n{\n    Assert.True(true);\n}"),
+        // fsharp
+        new("let", "Function", "fsharp", "let $0name x =\n    x"),
+        new("rec", "Recursive function", "fsharp", "let rec $0name n =\n    if n <= 0 then 0 else n + name (n - 1)"),
+        new("type", "Record type", "fsharp", "type $0Name = { Field: string }"),
+        new("union", "Discriminated union", "fsharp", "type $0Shape =\n    | Circle of float\n    | Square of float"),
+        new("match", "match expression", "fsharp", "match $0value with\n| Some x -> x\n| None -> 0"),
+        new("for", "for…in loop", "fsharp", "for item in $0items do\n    printfn \"%A\" item"),
+        new("pf", "printfn", "fsharp", "printfn \"%A\" $0"),
+        new("async", "async block", "fsharp", "async {\n    $0\n    return ()\n}"),
+        new("try", "try…with", "fsharp", "try\n    $0\nwith ex ->\n    printfn \"%s\" ex.Message"),
         // python
         new("def", "Function", "python", "def $0name():\n    pass"),
         new("class", "Class", "python", "class $0Name:\n    def __init__(self):\n        pass"),

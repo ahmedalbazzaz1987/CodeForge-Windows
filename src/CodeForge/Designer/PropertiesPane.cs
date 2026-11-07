@@ -50,6 +50,22 @@ public sealed class PropertiesPane : DockPanel
         if (designer == null) grid.SelectedObject = null;
     }
 
+    /// <summary>With no designer in front, the current file's properties (read-only), as Visual Studio shows them.</summary>
+    public void ShowFile(string? path, string? language, int? lines, string? encoding)
+    {
+        if (surface != null) return;
+        if (path == null || !System.IO.File.Exists(path))
+        {
+            empty.Text = path == null ? "Open a file to see its properties, or a form in the designer to see its controls." : "Save the file to see its properties.";
+            return;
+        }
+        var info = new System.IO.FileInfo(path);
+        grid.SelectedObject = new FileProperties(info, language ?? "", lines ?? 0, encoding ?? "");
+        heading.Text = info.Name + "  File Properties";
+        host.Visibility = Visibility.Visible;
+        empty.Visibility = Visibility.Collapsed;
+    }
+
     private void OnSelection(object target, string title)
     {
         heading.Text = title;
@@ -86,4 +102,23 @@ public sealed class PropertiesPane : DockPanel
         grid.SelectedItemWithFocusBackColor = C(p.Accent);
         grid.DisabledItemForeColor = C(p.SubtleText);
     }
+}
+
+/// <summary>What the Properties window shows for a file.</summary>
+public sealed class FileProperties(System.IO.FileInfo info, string language, int lines, string encoding)
+{
+    [System.ComponentModel.Category("File"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("The file's name.")]
+    public string Name => info.Name;
+    [System.ComponentModel.Category("File"), System.ComponentModel.ReadOnly(true), System.ComponentModel.DisplayName("Full Path"), System.ComponentModel.Description("Where the file is on disk.")]
+    public string FullPath => info.FullName;
+    [System.ComponentModel.Category("File"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("The language CodeForge uses for the file.")]
+    public string Language => language;
+    [System.ComponentModel.Category("File"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("The size of the saved file.")]
+    public string Size => info.Length < 1024 ? $"{info.Length} bytes" : info.Length < 1024 * 1024 ? $"{info.Length / 1024.0:0.#} KB" : $"{info.Length / 1048576.0:0.#} MB";
+    [System.ComponentModel.Category("File"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("When the file was last saved.")]
+    public DateTime Modified => info.LastWriteTime;
+    [System.ComponentModel.Category("Text"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("Lines in the editor.")]
+    public int Lines => lines;
+    [System.ComponentModel.Category("Text"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("The character encoding the file is saved in.")]
+    public string Encoding => encoding;
 }

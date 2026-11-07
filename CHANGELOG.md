@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.2
+
+Fixes from testing every language on Windows, mostly for Arabic and other non-English text. By Ahmed Al-Bazzaz.
+
+- **Arabic folder names work everywhere.** Programs, builds and the Terminal now run with the UTF-8 code page, so a
+  project under a folder such as "المستندات" builds and runs, the Terminal follows the project into it, and file names in
+  build errors are no longer "?????" (so double-clicking an F# or MSBuild error opens the right line again).
+- **Typing Arabic into a running program works**: input sent from the Output window arrives as UTF-8, not "????".
+- **Output and errors no longer cut into each other's lines.** stdout and stderr are shown a whole line at a time; a
+  prompt without a line break ("Name: ") still appears after a moment.
+- **Terminal**: shows Arabic output correctly, and Ctrl+C stops the running command, not the shell.
+- **A crashing program ends at once** instead of waiting half a minute for Windows Error Reporting, and its exit code is
+  explained: `-532462766 (0xE0434352: an unhandled .NET exception)`.
+- **.NET exceptions and failed tests go to the Error List**, at the first line of your code in the stack trace.
+- **Color codes are removed** from program output instead of showing as `[31m`.
+- **Undo works a word at a time** while typing, like Visual Studio, instead of one character at a time.
+- **HTML pages open in your browser** directly (Start no longer shows Windows' "Open with" box).
+- **Toolbox**: inserting two HTML items in a row puts the second after the first instead of inside it.
+- **Properties window** shows the current file's name, path, language, size, date, lines and encoding when no form
+  designer is open, and updates when you save.
+- **Double-clicking a control in the form designer** switches to the code at its event handler.
+- **Menus show real keys** (Ctrl+\`, Ctrl+-, Ctrl+Shift+.) instead of "OemTilde" and "OemMinus".
+- **Error List**: the File and Line columns fit without scrolling sideways.
+- **F# snippets** in the Toolbox and with Tab (`let`, `rec`, `type`, `union`, `match`, `for`, `pf`, `async`, `try`).
+
 ## 0.3.1
 
 The fixes from testing the Mac version (0.11.1 to 0.12.0), wherever the Windows version has the same feature.

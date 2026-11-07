@@ -1,10 +1,17 @@
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace CodeForge.Core;
 
 /// <summary>Output from programs that redraw their current line with a carriage return (progress counters, git's percentages).</summary>
-public static class ConsoleText
+public static partial class ConsoleText
 {
+    [GeneratedRegex(@"\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)|[@-Z\\-_])")]
+    private static partial Regex Ansi();
+
+    /// <summary>Removes ANSI escape sequences (colors, cursor moves, window titles), which the Output window can't show.</summary>
+    public static string StripAnsi(string text) => text.Contains('\u001B') ? Ansi().Replace(text, "") : text;
+
     /// <summary>
     /// The new last line after <paramref name="chunk"/> arrives, given the current last line (<paramref name="tail"/>, the text
     /// after the last line break). A carriage return not followed by a line break starts the line over, so only the last
@@ -83,5 +90,79 @@ public static class ToolCheck
             }
         }
         return false;
+    }
+}
+
+/// <summary>
+/// Splits one output stream into whole lines, so that stdout and stderr, read separately, interleave line by line instead of
+/// mid-line (Python, for one, writes a line's text and its line break separately). What follows the last line break waits
+/// in <see cref="Pending"/>: the reader shows it after a short pause, so prompts without a line break still appear.
+/// </summary>
+public sealed class StreamLines
+{
+    public string Pending { get; private set; } = "";
+
+    /// <summary>The whole lines that <paramref name="chunk"/> completes, with CR LF made LF (empty when there are none yet).</summary>
+    public string Add(string chunk)
+    {
+        var text = Pending + chunk;
+        // A CR at the very end may be the first half of a CR LF.
+        var end = text.EndsWith('\r') ? text.Length - 1 : text.Length;
+        var cut = text.LastIndexOf('\n', Math.Max(end - 1, 0)) + 1;
+        if (end == 0 || cut == 0) { Pending = text; return ""; }
+        Pending = text[cut..];
+        return text[..cut].Replace("\r\n", "\n");
+    }
+
+    /// <summary>Everything still waiting (a prompt, or the end of the output).</summary>
+    public string Flush()
+    {
+        var text = Pending.Replace("\r\n", "\n");
+        Pending = "";
+        return text;
+    }
+}
+
+/// <summary>Explains the exit codes Windows uses for crashes, which print as large negative numbers.</summary>
+public static class ExitCodes
+{
+    private static readonly Dictionary<uint, string> Known = new()
+    {
+        [0xE0434352] = "an unhandled .NET exception",
+        [0xC0000005] = "an access violation",
+        [0xC00000FD] = "a stack overflow",
+        [0xC0000409] = "a fail-fast or stack buffer overrun",
+        [0xC0000094] = "an integer division by zero",
+        [0xC000013A] = "Ctrl+C",
+        [0xC0000135] = "a missing DLL",
+    };
+
+    /// <summary>"-532462766 (0xE0434352: an unhandled .NET exception)", or the plain number for ordinary codes.</summary>
+    public static string Describe(int code)
+    {
+        if (code is >= 0 and < 0x10000) return code.ToString();
+        var unsigned = unchecked((uint)code);
+        var hex = $"0x{unsigned:X8}";
+        return Known.TryGetValue(unsigned, out var meaning) ? $"{code} ({hex}: {meaning})" : $"{code} ({hex})";
+    }
+}
+
+/// <summary>Key gestures as menus show them: "Ctrl+OemMinus" → "Ctrl+-".</summary>
+public static class KeyNames
+{
+    private static readonly (string Name, string Shown)[] Keys =
+    [
+        ("OemTilde", "`"), ("Oem3", "`"), ("OemMinus", "-"), ("OemPlus", "+"), ("OemPeriod", "."), ("OemComma", ","),
+        ("OemQuestion", "/"), ("Oem2", "/"), ("OemSemicolon", ";"), ("Oem1", ";"), ("OemQuotes", "'"), ("Oem7", "'"),
+        ("OemOpenBrackets", "["), ("Oem4", "["), ("OemCloseBrackets", "]"), ("Oem6", "]"), ("OemPipe", "\\"), ("Oem5", "\\"),
+    ];
+
+    public static string Display(string gesture)
+    {
+        var parts = gesture.Split('+');
+        for (var i = 0; i < parts.Length; i++)
+            foreach (var (name, shown) in Keys)
+                if (parts[i] == name) { parts[i] = shown; break; }
+        return string.Join("+", parts);
     }
 }

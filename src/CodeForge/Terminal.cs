@@ -9,11 +9,16 @@ namespace CodeForge;
 /// <summary>
 /// The Terminal tab: a PowerShell session in the project folder for one-line commands (git, dotnet, npm, dir…).
 /// It has no console window behind it, so full-screen programs don't work here. After each command a marker line
-/// reports the current folder, which becomes the prompt.
+/// reports the current folder, which becomes the prompt. PowerShell is started from cmd.exe after <c>chcp 65001</c>, so its
+/// input and output are UTF-8 from the start (setting the encoding later doesn't reach PowerShell's own reader and writer),
+/// and folders with Arabic or other non-ASCII names work.
 /// </summary>
 public sealed class Terminal
 {
     private const string Marker = "\u001ECWD:";
+    private const string PidMarker = "\u001EPID:";
+    /// <summary>PowerShell's own process (the started process is the cmd.exe in front of it).</summary>
+    private int shellPid;
     private readonly TextBox output;
     private readonly TextBox input;
     private readonly TextBlock prompt;
@@ -46,12 +51,13 @@ public sealed class Terminal
         input.Focus();
         if (shell is { HasExited: false }) return;
         folder = startFolder;
-        var info = new ProcessStartInfo(ShellPath(), "-NoLogo -NoProfile -NoExit -Command -")
+        var info = new ProcessStartInfo("cmd.exe", $"/d /s /c \"chcp 65001 >nul & \"{ShellPath()}\" -NoLogo -NoProfile -NoExit -Command -\"")
         {
             WorkingDirectory = Directory.Exists(folder) ? folder : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             UseShellExecute = false, CreateNoWindow = true,
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
+            StandardInputEncoding = new UTF8Encoding(false),
         };
         try
         {
@@ -66,8 +72,8 @@ public sealed class Terminal
         shell.StandardInput.AutoFlush = true;
         Pump(shell.StandardOutput);
         Pump(shell.StandardError);
-        // UTF-8 output, and no progress bars (they need a real console).
-        Send("[Console]::OutputEncoding = [Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'", echo: false);
+        // UTF-8 for programs PowerShell runs, no progress bars (they need a real console), and PowerShell's process id for Ctrl+C.
+        Send($"[Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'; Write-Output \"`n{PidMarker}$PID\"", echo: false);
     }
 
     private void Pump(StreamReader reader) => Task.Run(async () =>
@@ -85,7 +91,9 @@ public sealed class Terminal
     {
         if (path == null || !Directory.Exists(path)) return;
         folder = path;
-        if (shell is { HasExited: false }) Send($"Set-Location -LiteralPath '{path.Replace("'", "''")}'", echo: false);
+        // The path travels as Base64, so its letters can't be lost on the way in whatever the code page.
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(path));
+        if (shell is { HasExited: false }) Send($"Set-Location -LiteralPath ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded}')))", echo: false);
     }
 
     private void Send(string command, bool echo)
@@ -103,6 +111,15 @@ public sealed class Terminal
     {
         pending += text;
         int index;
+        while ((index = pending.IndexOf(PidMarker, StringComparison.Ordinal)) >= 0)
+        {
+            var end = pending.IndexOf('\n', index);
+            if (end < 0) break;
+            if (int.TryParse(pending[(index + PidMarker.Length)..end].Trim(), out var pid)) shellPid = pid;
+            var before = pending[..index];
+            if (before.EndsWith('\n')) before = before[..^1];
+            pending = before + pending[(end + 1)..];
+        }
         while ((index = pending.IndexOf(Marker, StringComparison.Ordinal)) >= 0)
         {
             var end = pending.IndexOf('\n', index);
@@ -169,7 +186,8 @@ public sealed class Terminal
         if (shell is not { HasExited: false }) return;
         try
         {
-            var kill = new ProcessStartInfo("taskkill", $"/F /T /FI \"PID ne {shell.Id}\" /FI \"PARENTPID eq {shell.Id}\"") { CreateNoWindow = true, UseShellExecute = false };
+            var parent = shellPid != 0 ? shellPid : shell.Id;
+            var kill = new ProcessStartInfo("taskkill", $"/F /T /FI \"PID ne {parent}\" /FI \"PARENTPID eq {parent}\"") { CreateNoWindow = true, UseShellExecute = false };
             Process.Start(kill);
             Append("^C\n");
         }

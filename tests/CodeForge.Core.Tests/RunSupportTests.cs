@@ -83,4 +83,68 @@ public class RunSupportTests
         }
         Assert.Equal("fmt.Println($0)", Snippets.Find("go", "pl")!.Body);
     }
+
+    [Fact]
+    public void StreamsAreSplitIntoWholeLines()
+    {
+        var lines = new StreamLines();
+        Assert.Equal("", lines.Add("A stdout 1"));          // Python writes the text…
+        Assert.Equal("A stdout 1\n", lines.Add("\r\n"));   // …and the line break separately
+        Assert.Equal("one\n", lines.Add("one\r\ntwo\r"));  // a CR at the end may be half of a CR LF
+        Assert.Equal("two\n", lines.Add("\nName: "));
+        Assert.Equal("Name: ", lines.Pending);
+        Assert.Equal("Name: ", lines.Flush());
+        Assert.Equal("", lines.Pending);
+    }
+
+    [Fact]
+    public void AnsiEscapesAreRemoved()
+    {
+        Assert.Equal("red text", ConsoleText.StripAnsi("\u001B[31mred text\u001B[0m"));
+        Assert.Equal("bold", ConsoleText.StripAnsi("\u001B[1;32mbold\u001B[m"));
+        Assert.Equal("title gone", ConsoleText.StripAnsi("\u001B]0;My Title\u0007title gone"));
+        Assert.Equal("plain", ConsoleText.StripAnsi("plain"));
+    }
+
+    [Fact]
+    public void CrashExitCodesAreExplained()
+    {
+        Assert.Equal("1", ExitCodes.Describe(1));
+        Assert.Equal("-532462766 (0xE0434352: an unhandled .NET exception)", ExitCodes.Describe(-532462766));
+        Assert.Contains("0xC00000FD: a stack overflow", ExitCodes.Describe(unchecked((int)0xC00000FD)));
+        Assert.Equal("-5 (0xFFFFFFFB)", ExitCodes.Describe(-5));
+    }
+
+    [Fact]
+    public void MenuGesturesUseKeyCharacters()
+    {
+        Assert.Equal("Ctrl+`", KeyNames.Display("Ctrl+OemTilde"));
+        Assert.Equal("Ctrl+Shift+-", KeyNames.Display("Ctrl+Shift+OemMinus"));
+        Assert.Equal("Ctrl+Shift+.", KeyNames.Display("Ctrl+Shift+OemPeriod"));
+        Assert.Equal("Ctrl+Shift+F", KeyNames.Display("Ctrl+Shift+F"));
+    }
+
+    [Fact]
+    public void DotNetExceptionsAndFailedTestsGoToTheErrorList()
+    {
+        var crash = DiagnosticParser.Parse(
+            "next line throws\n" +
+            "Unhandled exception. System.IndexOutOfRangeException: Index was outside the bounds of the array.\n" +
+            "   at Program.<Main>$(String[] args) in C:\\Users\\rayan\\OneDrive\\المستندات\\CFT_CSharp\\Program.cs:line 33\n" +
+            "   at Program.<Main>(String[] args)\n");
+        var error = Assert.Single(crash);
+        Assert.Equal(33, error.Line);
+        Assert.EndsWith("Program.cs", error.File);
+        Assert.StartsWith("System.IndexOutOfRangeException", error.Message);
+
+        var test = DiagnosticParser.Parse(
+            "  Failed CFT_MSTest.Test1.Intentional_Failure [3 ms]\n" +
+            "  Error Message:\n" +
+            "   Assert.AreEqual failed. Expected:<10>. Actual:<4>.\n" +
+            "  Stack Trace:\n" +
+            "     at CFT_MSTest.Test1.Intentional_Failure() in C:\\p\\Test1.cs:line 31\n");
+        var failed = Assert.Single(test);
+        Assert.Equal(31, failed.Line);
+        Assert.Equal("Test failed: CFT_MSTest.Test1.Intentional_Failure — Assert.AreEqual failed. Expected:<10>. Actual:<4>.", failed.Message);
+    }
 }
