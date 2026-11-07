@@ -881,7 +881,7 @@ public partial class MainWindow : Window
             ToolboxTree.Items.Add(node);
         }
         ToolboxEmpty.Text = language == null ? "Open a file to see its controls and snippets."
-            : groups.Count == 0 ? $"There are no Toolbox items for {language.Name} files. Open a XAML, HTML, Razor, C#, VB.NET, Python or JavaScript file."
+            : groups.Count == 0 ? $"There are no Toolbox items for {language.Name} files. Open a XAML, HTML, Razor, C#, VB.NET, Python, JavaScript, TypeScript, C, C++, Java, Go or Rust file."
             : "No matches.";
         ToolboxEmpty.Visibility = ToolboxTree.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
