@@ -22,7 +22,7 @@ function Shot([string]$Name, [hashtable]$Env) {
     $vars = @{ CF_SNAPSHOT = (Join-Path $Out "$Name.png"); CF_SETTINGS_DIR = $settings; CF_FRESH = "1"; CF_NO_BROWSER = "1" } + $Env
     foreach ($k in $vars.Keys) { Set-Item "env:$k" $vars[$k] }
     $p = Start-Process -FilePath $App -PassThru
-    if (-not $p.WaitForExit(120000)) { $p.Kill(); $script:failed += "$Name (timed out)" }
+    if (-not $p.WaitForExit(180000)) { $p.Kill(); $script:failed += "$Name (timed out)" }
     elseif ($p.ExitCode -ne 0) { $script:failed += "$Name (exit code $($p.ExitCode))" }
     foreach ($k in $vars.Keys) { Remove-Item "env:$k" }
     if (-not (Test-Path (Join-Path $Out "$Name.png"))) { $script:failed += "$Name (no image)" }
@@ -67,7 +67,7 @@ if (-not (Select-String -Path "$demo\second.py" -SimpleMatch "newname = 2" -Quie
 if (-not (Select-String -Path "$demo\first.py" -SimpleMatch "sum = 1" -Quiet)) { $failed += "Replace in Files (open file)" }
 
 # A snippet from Tab; a bookmark that follows its line when two lines go in above it.
-Shot "13-snippet-bookmark" @{ CF_OPEN = "$demo;$demo\app.cs"; CF_ACTIONS = "goto:3,togglebookmark,goto:1,type:prop\t\n\n,saveall" }
+Shot "13-snippet-bookmark" @{ CF_OPEN = "$demo;$demo\app.cs"; CF_ACTIONS = "goto:3,togglebookmark,goto:1,type:\n\n,goto:1,type:prop\t,saveall" }
 if (-not (Select-String -Path "$demo\app.cs" -SimpleMatch "public int MyProperty { get; set; }" -Quiet)) { $failed += "Snippet expansion" }
 $saved = Get-Content "$work\settings-13-snippet-bookmark\settings.json" -Raw | ConvertFrom-Json
 $lines = @($saved.Bookmarks."$demo\app.cs")

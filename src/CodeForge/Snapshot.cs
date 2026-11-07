@@ -31,7 +31,7 @@ public static class Snapshot
             After(1 + i * gap, () => window.Perform(action));
         }
         var delay = double.TryParse(Environment.GetEnvironmentVariable("CF_DELAY"), out var seconds) ? seconds : 4;
-        After(Math.Max(delay, actions.Length * gap + 1), () =>
+        After(Math.Max(delay, (actions.Length - 1) * gap + 2), () =>
         {
             var index = 0;
             foreach (Window open in Application.Current.Windows)
