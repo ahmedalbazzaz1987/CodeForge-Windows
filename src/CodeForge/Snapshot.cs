@@ -12,6 +12,7 @@ namespace CodeForge;
 ///   CF_SNAPSHOT=out.png   where to write the image (required)
 ///   CF_OPEN=path;path     folders or files to open first
 ///   CF_ACTIONS=a,b        start, build, errors, terminal, dark, blue, newproject, options, find (2 s apart)
+///   CF_ACTION_GAP=seconds time between actions (default 2)
 ///   CF_DELAY=seconds      how long to wait before the picture (default 4)
 /// </summary>
 public static class Snapshot
@@ -23,13 +24,14 @@ public static class Snapshot
         foreach (var target in (Environment.GetEnvironmentVariable("CF_OPEN") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
             window.OpenPath(Path.GetFullPath(target));
         var actions = (Environment.GetEnvironmentVariable("CF_ACTIONS") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var gap = double.TryParse(Environment.GetEnvironmentVariable("CF_ACTION_GAP"), out var g) ? g : 2;
         for (var i = 0; i < actions.Length; i++)
         {
             var action = actions[i].Trim();
-            After(1 + i * 2, () => window.Perform(action));
+            After(1 + i * gap, () => window.Perform(action));
         }
         var delay = double.TryParse(Environment.GetEnvironmentVariable("CF_DELAY"), out var seconds) ? seconds : 4;
-        After(Math.Max(delay, actions.Length * 2 + 1), () =>
+        After(Math.Max(delay, actions.Length * gap + 1), () =>
         {
             var index = 0;
             foreach (Window open in Application.Current.Windows)

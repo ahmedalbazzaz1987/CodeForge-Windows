@@ -363,6 +363,7 @@ public partial class MainWindow : Window
 
     public void SetWorkspace(string? folder)
     {
+        if (workspace != null && !SamePath(workspace, folder) && !CloseProject(workspace)) return;
         workspace = folder;
         if (folder != null)
         {
@@ -374,6 +375,33 @@ public partial class MainWindow : Window
         UpdateChrome();
         UpdateBranch();
         SaveSession();
+    }
+
+    /// <summary>
+    /// Closes what belongs to the project being left, like closing a solution in Visual Studio: its tabs (asking about
+    /// unsaved changes first), the program it runs, its output, errors, Find Results and Task List.
+    /// </summary>
+    private bool CloseProject(string folder)
+    {
+        bool Inside(string? path) => path != null && path.StartsWith(Path.TrimEndingDirectorySeparator(folder) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        var designersInside = designers.Where(d => Inside(d.CodePath)).ToList();
+        var documentsInside = documents.Where(d => Inside(d.Path)).ToList();
+        if (!designersInside.All(ConfirmDiscard) || !documentsInside.All(ConfirmDiscard)) return false;
+        runner.Stop();
+        foreach (var designer in designersInside) RemoveDesigner(designer);
+        foreach (var document in documentsInside) RemoveDocument(document);
+        OutputText.Clear();
+        diagnostics = [];
+        runFolder = null;
+        RefreshDiagnostics();
+        FindSummary.Text = "";
+        FindResults.ItemsSource = null;
+        FindResultsTab.Header = "Find Results";
+        TaskList.ItemsSource = null;
+        TaskListSummary.Text = "";
+        TaskListTab.Header = "Task List";
+        StatusText.Text = "";
+        return true;
     }
 
     private void ReloadExplorer()
@@ -889,7 +917,21 @@ public partial class MainWindow : Window
     {
         if (runner.IsRunning) return;
         if (CustomRunCommand is { } custom) { SaveAll(); RunCommand(custom, workspace!, "Running…"); return; }
-        if (ProjectRunPlan() is { } plan) { SaveAll(); RunCommand(plan.Run!, plan.Folder, $"Running {plan.Name}…"); return; }
+        if (workspace != null && CustomRunCommand == null && BuildSystem.LibraryProject(workspace) is { } library && ProjectRunPlan() != null)
+        {
+            ShowPanel(OutputTab);
+            OutputText.Clear();
+            AppendOutput($"{library} is a class library, so it can't be started directly. Use Build to compile it, or add it to a program that uses it.\n");
+            StatusText.Text = "A class library can't be started";
+            return;
+        }
+        if (ProjectRunPlan() is { } plan)
+        {
+            if (!ToolIsInstalled(plan.Run!)) return;
+            SaveAll();
+            RunCommand(plan.Run!, plan.Folder, $"Running {plan.Name}…");
+            return;
+        }
         if (Current is not { } document)
         {
             ShowError("Nothing to start", "Open a project folder or a file first.");
@@ -902,12 +944,25 @@ public partial class MainWindow : Window
             ShowError($"CodeForge doesn't know how to run {document.Language.Name} files", "Open the project folder to run the whole project, or use Debug ▸ Set Run Command….");
             return;
         }
+        if (!ToolIsInstalled(template)) return;
         var output = Path.Combine(Path.GetTempPath(), "CodeForge", "build");
         Directory.CreateDirectory(output);
         RunCommand(CommandTemplate.Expand(template, document.Path!, output), Path.GetDirectoryName(document.Path)!, $"Running {document.DisplayName}…", document.Language);
     }
 
     private Language? runningLanguage;
+
+    /// <summary>Says what to install, instead of running a command that can only fail with "is not recognized".</summary>
+    private bool ToolIsInstalled(string command)
+    {
+        if (ToolCheck.Program(command) is not { } program || ToolCheck.IsAvailable(program)) return true;
+        ShowPanel(OutputTab);
+        OutputText.Clear();
+        var name = Path.GetFileNameWithoutExtension(program);
+        AppendOutput($"“{name}” isn't installed (or isn't on PATH), so this can't run yet.\n{ToolCheck.InstallHint(program) ?? "Install it, then restart CodeForge."}\n");
+        StatusText.Text = $"{name} isn't installed";
+        return false;
+    }
 
     public void RunCommand(string command, string folder, string status, Language? language = null)
     {
@@ -926,6 +981,15 @@ public partial class MainWindow : Window
 
     private void RunFinished(int code, double seconds)
     {
+        if (runner.WasStopped)
+        {
+            AppendOutput($"\n[Stopped after {seconds:0.00}s]\n");
+            StatusText.Text = "Stopped";
+            afterRun = null;
+            pendingOpenFolder = null;
+            UpdateChrome();
+            return;
+        }
         AppendOutput($"\n[Finished with exit code {code} in {seconds:0.00}s]\n");
         if (code is 9009 or 1 && runningLanguage?.InstallHint is { } hint && OutputText.Text.Contains("is not recognized"))
             AppendOutput($"A required tool wasn't found. {hint}\n");
@@ -948,7 +1012,16 @@ public partial class MainWindow : Window
 
     private void AppendOutput(string text)
     {
-        OutputText.AppendText(text);
+        // A carriage return on its own redraws the line (progress counters): keep only its last version.
+        var current = OutputText.Text;
+        var lineStart = current.LastIndexOf('\n') + 1;
+        if (text.Contains('\r') || (current.Length > 0 && current[^1] == '\r'))
+        {
+            OutputText.Select(lineStart, current.Length - lineStart);
+            OutputText.SelectedText = ConsoleText.Rewrite(current[lineStart..], text);
+            OutputText.Select(OutputText.Text.Length, 0);
+        }
+        else OutputText.AppendText(text);
         if (OutputText.Text.Length > 2_000_000) OutputText.Text = OutputText.Text[^1_500_000..];
         OutputText.ScrollToEnd();
     }
@@ -978,7 +1051,11 @@ public partial class MainWindow : Window
     {
         if (runner.IsRunning) return;
         SaveAll();
-        if (Plan() is { } plan) { RunCommand(plan.Build, plan.Folder, $"Building {plan.Name}…"); return; }
+        if (Plan() is { } plan)
+        {
+            if (ToolIsInstalled(plan.Build)) RunCommand(plan.Build, plan.Folder, $"Building {plan.Name}…");
+            return;
+        }
         if (Current?.Path is { } file && Current.Language.Id is "csharp")
         {
             RunCommand($"dotnet build \"{file}\"", Path.GetDirectoryName(file)!, "Building…");
@@ -1433,6 +1510,13 @@ public partial class MainWindow : Window
             case "report":
                 File.AppendAllText(Environment.GetEnvironmentVariable("CF_REPORT") ?? "report.txt", $"{Current?.DisplayName}:{Current?.CaretPosition.Line}\n");
                 break;
+            case "stop": runner.Stop(); break;
+            case "dump":
+                // Status, open tabs and output, for checks in scripts/screenshots.ps1.
+                File.AppendAllText(Environment.GetEnvironmentVariable("CF_REPORT") ?? "report.txt",
+                    $"STATUS: {StatusText.Text}\nTABS: {string.Join(",", documents.Select(d => d.DisplayName))}\nOUTPUT:\n{OutputText.Text}\n");
+                break;
+            case var a when a.StartsWith("open:"): OpenPath(a[5..]); break;
             case "togglebookmark": ToggleBookmark(); break;
             case "nextbookmark": GoToBookmark(false); break;
             case "back": NavigateBackward(); break;
@@ -1442,8 +1526,13 @@ public partial class MainWindow : Window
             case var a when a.StartsWith("replace:"): FindWindow.RunReplace(a[8..].Split("=>")[0], a[8..].Split("=>")[1]); break;
             case var a when a.StartsWith("goto:"): Current?.Reveal(int.Parse(a[5..])); break;
             case var a when a.StartsWith("type:") && Current is { } typing:
-                typing.Editor.Document.Insert(typing.Editor.CaretOffset, a[5..].Replace("\\n", "\n"));
-                if (a.EndsWith("\\t")) { typing.Editor.Document.Remove(typing.Editor.CaretOffset - 2, 2); typing.ExpandSnippet(); }
+                // "\t" presses Tab (expanding a snippet) and "\n" types a line break, anywhere in the text.
+                var pieces = a[5..].Split("\\t");
+                for (var i = 0; i < pieces.Length; i++)
+                {
+                    typing.Editor.Document.Insert(typing.Editor.CaretOffset, pieces[i].Replace("\\n", "\n"));
+                    if (i < pieces.Length - 1) typing.ExpandSnippet();
+                }
                 break;
             case "newproject": Dispatcher.BeginInvoke(NewProject); break;
             case "options": Dispatcher.BeginInvoke(ShowOptions); break;

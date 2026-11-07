@@ -27,7 +27,18 @@ public static partial class BuildSystem
             // `dotnet run` needs a project; with only a solution here, run the first project in a subfolder.
             var runTarget = project == null && FirstProject(folder) is { } sub ? " --project " + CommandTemplate.Quote(sub) : "";
             var name = Path.GetFileNameWithoutExtension(project ?? solution)!;
-            return new BuildPlan($".NET ({name})", "dotnet build" + config, "dotnet clean", folder, "dotnet run" + config + runTarget,
+            var text = project != null ? File.ReadAllText(Path.Combine(folder, project)) : "";
+            var build = "dotnet build" + config;
+            var run = "dotnet run" + config + runTarget;
+            // A test project has no program to run: `dotnet run` would do nothing and say nothing.
+            if (IsTestProject(text)) run = "dotnet test" + config;
+            // .NET MAUI targets several platforms; on Windows, Start runs the Windows one (the others need Android or a Mac).
+            if (text.Contains("<UseMaui>true</UseMaui>") && WindowsTarget().Match(text) is { Success: true } target)
+            {
+                build = $"dotnet build -f {target.Value}" + config;
+                run = $"dotnet run -f {target.Value}" + config;
+            }
+            return new BuildPlan($".NET ({name})", build, "dotnet clean", folder, run,
                                  ["csharp", "vb", "fsharp", "razor", "xaml", "html", "css", "javascript", "json", "xml"]);
         }
         if (names.Contains("package.json"))
@@ -48,6 +59,25 @@ public static partial class BuildSystem
         if (names.Contains("tsconfig.json"))
             return new BuildPlan("TypeScript", "npx --yes tsc", null, folder, null, ["typescript"]);
         return null;
+    }
+
+    public static bool IsTestProject(string project) =>
+        new[] { "Microsoft.NET.Test.Sdk", "<IsTestProject>true", "MSTest.Sdk", "MSTest" }.Any(project.Contains);
+
+    /// <summary>
+    /// The name of the class library in this folder, if the project there is one. It can be built but not started:
+    /// without an OutputType of Exe or WinExe, these SDKs build a library.
+    /// </summary>
+    public static string? LibraryProject(string folder)
+    {
+        if (!Directory.Exists(folder)) return null;
+        var file = Directory.GetFiles(folder).Order(StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(f => DotNetProjectExtensions.Any(e => f.EndsWith(e, StringComparison.OrdinalIgnoreCase)));
+        if (file == null) return null;
+        var text = File.ReadAllText(file);
+        var plainSdk = text.Contains("Sdk=\"Microsoft.NET.Sdk\"") || text.Contains("Sdk=\"Microsoft.NET.Sdk.Razor\"");
+        var makesProgram = text.Contains("Exe</OutputType>") || text.Contains("<UseMaui>true") || IsTestProject(text);
+        return plainSdk && !makesProgram ? Path.GetFileNameWithoutExtension(file) : null;
     }
 
     /// <summary>The command that runs a project's tests (Test ▸ Run All Tests), if the project type has one.</summary>
@@ -83,6 +113,9 @@ public static partial class BuildSystem
         if (!match.Success) return null;
         return match.Groups[1].Value.Replace("[::]", "localhost").Replace("0.0.0.0", "localhost").Replace("+", "localhost").Replace("*", "localhost");
     }
+
+    [GeneratedRegex(@"net\d+\.\d+-windows[\d.]+")]
+    private static partial Regex WindowsTarget();
 
     [GeneratedRegex(@"Now listening on: (https?://\S+)")]
     private static partial Regex ListeningRegex();

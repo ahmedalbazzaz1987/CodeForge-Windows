@@ -79,6 +79,35 @@ Shot "14-navigation" @{ CF_OPEN = "$demo;$demo\first.py;$demo\second.py"; CF_ACT
 $visited = (Get-Content $report | ForEach-Object { ($_ -split ":")[0] }) -join ","
 if ($visited -ne "second.py,first.py,second.py") { $failed += "Navigation went: $visited" }
 
+# Running programs: Stop, a line that redraws itself, a missing tool, a class library, a test project, switching projects.
+function Report([string]$Name, [hashtable]$Env) {
+    $file = "$work\report-$Name.txt"
+    Remove-Item $file -ErrorAction SilentlyContinue
+    Shot $Name ($Env + @{ CF_REPORT = $file })
+    if (Test-Path $file) { return Get-Content $file -Raw } else { return "" }
+}
+$runs = "$work\Runs"
+New-Item -ItemType Directory -Force $runs | Out-Null
+Set-Content "$runs\forever.py" "import time`r`nprint('running', flush=True)`r`nwhile True:`r`n    time.sleep(1)`r`n"
+Set-Content "$runs\progress.py" "import sys, time`r`nfor i in range(0, 101, 25):`r`n    sys.stdout.write(f'\rProgress {i}%')`r`n    sys.stdout.flush()`r`n    time.sleep(0.2)`r`nprint()`r`nprint('done')`r`n"
+Set-Content "$runs\hello.lua" "print('hi')`r`n"
+
+$text = Report "15-stop" @{ CF_OPEN = "$runs\forever.py"; CF_ACTIONS = "start,stop,dump"; CF_DELAY = "8" }
+if ($text -notmatch "STATUS: Stopped") { $failed += "Stop (status wasn't Stopped)" }
+$text = Report "16-progress" @{ CF_OPEN = "$runs\progress.py"; CF_ACTIONS = "start,dump"; CF_ACTION_GAP = "7"; CF_DELAY = "10" }
+if ($text -notmatch "Progress 100%" -or $text -match "Progress 25%") { $failed += "Progress line (not redrawn)" }
+$text = Report "17-missing-tool" @{ CF_OPEN = "$runs\hello.lua"; CF_ACTIONS = "start,dump"; CF_DELAY = "6" }
+if ((Get-Command lua -ErrorAction SilentlyContinue) -eq $null -and $text -notmatch "isn't installed") { $failed += "Missing tool message" }
+
+dotnet new classlib -o "$work\Lib1" -n Lib1 | Out-Null
+$text = Report "18-library" @{ CF_OPEN = "$work\Lib1;$work\Lib1\Class1.cs"; CF_ACTIONS = "start,dump"; CF_DELAY = "6" }
+if ($text -notmatch "class library") { $failed += "Class library message" }
+dotnet new xunit -o "$work\Tests1" -n Tests1 | Out-Null
+$text = Report "19-test-project" @{ CF_OPEN = "$work\Tests1;$work\Tests1\UnitTest1.cs"; CF_ACTIONS = "start,dump"; CF_ACTION_GAP = "75"; CF_DELAY = "78" }
+if ($text -notmatch "dotnet test" -or $text -notmatch "Passed!") { $failed += "Test project (tests didn't run)" }
+$text = Report "20-switch-project" @{ CF_OPEN = "$demo;$demo\first.py"; CF_ACTIONS = "open:$work\Lib1,dump"; CF_DELAY = "6" }
+if ($text -match "TABS: .*first.py") { $failed += "Switching projects left the old tabs open" }
+
 if (Test-Path "$env:APPDATA\CodeForge\errors.log") { Get-Content "$env:APPDATA\CodeForge\errors.log" }
 Get-ChildItem $work -Filter errors.log -Recurse | ForEach-Object { Write-Host "== $($_.FullName)"; Get-Content $_.FullName }
 if ($failed.Count -gt 0) { throw "Screenshots failed: $($failed -join ', ')" }

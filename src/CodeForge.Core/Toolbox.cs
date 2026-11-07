@@ -25,7 +25,13 @@ public static class ToolboxCatalog
         "csharp" => [CSharp],
         "vb" => [VisualBasic],
         "python" => [Python],
-        "javascript" or "typescript" => [JavaScript],
+        "javascript" => [JavaScript],
+        "typescript" => [TypeScript, JavaScript],
+        "c" => [C],
+        "cpp" => [Cpp, C],
+        "java" => [Java],
+        "go" => [Go],
+        "rust" => [Rust],
         _ => [],
     };
 
@@ -125,5 +131,75 @@ public static class ToolboxCatalog
         new("Event listener", "", "document.querySelector(\"$0\").addEventListener(\"click\", (event) => {\n    \n});"),
         new("fetch JSON", "", "const response = await fetch($0url);\nconst data = await response.json();"),
         new("console.log", "", "console.log($0);"),
+    ]);
+
+    static readonly ToolboxGroup C = new("C Snippets",
+    [
+        new("main", "", "#include <stdio.h>\n\nint main(void) {\n    $0\n    return 0;\n}"),
+        new("Function", "", "int $0name(void) {\n    return 0;\n}"),
+        new("Struct", "", "typedef struct {\n    int $0value;\n} Name;"),
+        new("if", "", "if ($0condition) {\n    \n}"),
+        new("for loop", "", "for (int i = 0; i < $0count; i++) {\n    \n}"),
+        new("while loop", "", "while ($0condition) {\n    \n}"),
+        new("switch", "", "switch ($0value) {\ncase 1:\n    break;\ndefault:\n    break;\n}"),
+        new("printf", "", "printf(\"$0\\n\");"),
+        new("malloc", "", "int *items = malloc($0count * sizeof *items);\nif (items == NULL) {\n    return 1;\n}\nfree(items);"),
+    ]);
+
+    static readonly ToolboxGroup Cpp = new("C++ Snippets",
+    [
+        new("main", "", "#include <iostream>\n\nint main() {\n    $0\n    return 0;\n}"),
+        new("Class", "", "class $0Name {\npublic:\n    Name() = default;\n\nprivate:\n    int value_ = 0;\n};"),
+        new("Range for", "", "for (const auto& item : $0items) {\n    \n}"),
+        new("cout", "", "std::cout << $0 << std::endl;"),
+        new("vector", "", "std::vector<int> $0values;"),
+        new("unique_ptr", "", "auto $0item = std::make_unique<Type>();"),
+        new("try…catch", "", "try {\n    $0\n} catch (const std::exception& error) {\n    std::cerr << error.what() << std::endl;\n}"),
+        new("Lambda", "", "auto $0name = [&](int value) {\n    return value;\n};"),
+    ]);
+
+    static readonly ToolboxGroup Java = new("Java Snippets",
+    [
+        new("main", "", "public static void main(String[] args) {\n    $0\n}"),
+        new("Class", "", "public class $0Name {\n    \n}"),
+        new("Method", "", "public void $0name() {\n    \n}"),
+        new("Record", "", "public record $0Name(String value) {}"),
+        new("if", "", "if ($0condition) {\n    \n}"),
+        new("for each", "", "for (var item : $0items) {\n    \n}"),
+        new("try…catch", "", "try {\n    $0\n} catch (Exception error) {\n    error.printStackTrace();\n}"),
+        new("println", "", "System.out.println($0);"),
+        new("ArrayList", "", "var $0items = new java.util.ArrayList<String>();"),
+    ]);
+
+    static readonly ToolboxGroup TypeScript = new("TypeScript Snippets",
+    [
+        new("Interface", "", "interface $0Name {\n    id: number;\n}"),
+        new("Type", "", "type $0Name = {\n    id: number;\n};"),
+        new("Enum", "", "enum $0Name {\n    First,\n    Second,\n}"),
+        new("Class", "", "class $0Name {\n    constructor(private readonly id: number) {}\n}"),
+        new("Typed function", "", "function $0name(value: string): string {\n    return value;\n}"),
+        new("Generic function", "", "function $0name<T>(value: T): T {\n    return value;\n}"),
+        new("Async function", "", "async function $0name(): Promise<void> {\n    \n}"),
+    ]);
+
+    static readonly ToolboxGroup Go = new("Go Snippets",
+    [
+        new("main", "", "func main() {\n\t$0\n}"),
+        new("Function", "", "func $0name() error {\n\treturn nil\n}"),
+        new("Struct", "", "type $0Name struct {\n\tID int\n}"),
+        new("if err", "", "if err != nil {\n\treturn $0err\n}"),
+        new("for range", "", "for _, item := range $0items {\n\t\n}"),
+        new("Println", "", "fmt.Println($0)"),
+    ]);
+
+    static readonly ToolboxGroup Rust = new("Rust Snippets",
+    [
+        new("main", "", "fn main() {\n    $0\n}"),
+        new("Function", "", "fn $0name() -> i32 {\n    0\n}"),
+        new("Struct", "", "struct $0Name {\n    id: u32,\n}"),
+        new("impl", "", "impl $0Name {\n    fn new() -> Self {\n        Self {}\n    }\n}"),
+        new("match", "", "match $0value {\n    Some(item) => {}\n    None => {}\n}"),
+        new("for", "", "for item in $0items.iter() {\n    \n}"),
+        new("println!", "", "println!(\"{}\", $0);"),
     ]);
 }

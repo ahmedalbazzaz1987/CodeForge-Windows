@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.1
+
+The fixes from testing the Mac version (0.11.1 to 0.12.0), wherever the Windows version has the same feature.
+
+- **Stop says "Stopped"** instead of reporting a failure.
+- **Progress that redraws its line** (a carriage return, like git's percentages) shows only its last version.
+- **Missing tools are named before running**: if Go, Rust, Java, Node.js, Python, a C compiler or another tool isn't
+  installed, Start and Build say what to install (with the winget command) instead of failing with "is not recognized".
+- **Start on a test project runs its tests** (xUnit, NUnit, MSTest), and **Start on a class library** explains that a
+  library can't be started.
+- **.NET MAUI apps build and start as Windows apps**, so Build no longer needs the Android SDK or a Mac.
+- **Opening another project closes the old one's tabs**, output, errors, Find Results and Task List, like closing a
+  solution in Visual Studio. It asks about unsaved files first.
+- Test runner lines such as `[xUnit.net 00:00:01.23]` no longer add false entries to the Error List.
+- **Snippets and Toolbox groups for C, C++, Java, Go, Rust and TypeScript.**
+
 ## 0.3.0
 
 A modern look, and more of Visual Studio's everyday tools. By Ahmed Al-Bazzaz.

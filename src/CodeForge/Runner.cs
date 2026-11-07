@@ -16,6 +16,8 @@ public sealed class Runner
     private readonly Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
 
     public bool IsRunning => process is { HasExited: false };
+    /// <summary>The last run ended because Stop was pressed, not because it failed.</summary>
+    public bool WasStopped { get; private set; }
     /// <summary>(text, isError)</summary>
     public event Action<string, bool>? Output;
     /// <summary>(exit code, seconds)</summary>
@@ -24,6 +26,7 @@ public sealed class Runner
     public void Run(string command, string folder, IDictionary<string, string>? environment = null)
     {
         Stop();
+        WasStopped = false;
         var info = new ProcessStartInfo("cmd.exe")
         {
             // /s keeps the quotes in the command as they are; /d skips AutoRun scripts.
@@ -97,6 +100,7 @@ public sealed class Runner
     public void Stop()
     {
         if (process is not { HasExited: false } running) return;
+        WasStopped = true;
         try { running.Kill(entireProcessTree: true); } catch (Exception) { }
     }
 }

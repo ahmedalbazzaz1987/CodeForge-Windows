@@ -22,7 +22,7 @@ public static partial class DiagnosticParser
     [GeneratedRegex(@"^\s*([^\s(][^(\n]*\.\w+)\((\d+),(\d+)(?:,\d+,\d+)?\):\s*(error|warning)\s*([A-Z]+\d+)?:?\s*(.+?)(?:\s+\[[^\]\n]+\])?$")]
     private static partial Regex MSBuild();
 
-    [GeneratedRegex(@"^((?:[A-Za-z]:)?(?=[^:\n]*[./\\])[^\s:][^:\n]*?):(\d+):(?:(\d+):)?\s*(?:(fatal error|error|warning|note)\s*(?:\[[^\]]*\])?:)?\s*(.+)$")]
+    [GeneratedRegex(@"^((?:[A-Za-z]:)?(?=[^:\n]*[./\\])[^\s:\[][^:\n]*?):(\d+):(?:(\d+):)?\s*(?:(fatal error|error|warning|note)\s*(?:\[[^\]]*\])?:)?\s*(.+)$")]
     private static partial Regex Compiler();
 
     [GeneratedRegex(@"^(error|warning)(?:\[\w+\])?: (.+)$")]
