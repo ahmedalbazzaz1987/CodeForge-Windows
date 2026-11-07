@@ -12,6 +12,8 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
 - **Find and navigate**: Find and Replace in Files, a Task List of TODO comments, bookmarks, Navigate Backward/Forward
   and Tab-expanding code snippets.
 - **Modern themes**: Modern Light, Modern Dark, Gray and Midnight, plus Visual Studio's Light, Dark and Blue.
+- **Debugger**: F5 debugs C#, VB.NET, F# (netcoredbg) and Python (debugpy) with breakpoints (F9 or a click in the margin),
+  Step Over/Into/Out (F10/F11/Shift+F11), Locals, Call Stack and expression evaluation; Ctrl+F5 runs without debugging.
 - **Run and fix**: F5 runs the project or the current file; build errors from VB.NET, C#, gcc, Python and Node.js go to
   the Error List and are underlined in the code.
 - **Many languages**: C#, VB.NET, F#, XAML, Python, JavaScript, TypeScript, C, C++, Java, Kotlin, Go, Rust, Swift,

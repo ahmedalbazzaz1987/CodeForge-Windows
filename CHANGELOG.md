@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0
+
+**A debugger**, like Visual Studio's, for C#, VB.NET, F# and Python. By Ahmed Al-Bazzaz.
+
+- **F5 starts debugging** (Ctrl+F5 still runs without it). .NET programs (console, Windows Forms, WPF, ASP.NET Core) are
+  built in Debug and run under netcoredbg, Samsung's open-source .NET debugger, which CodeForge downloads the first time
+  (with your OK). Python files run under debugpy, installed with pip into CodeForge's own folder the first time.
+- **Breakpoints**: click in the margin left of the line numbers, or press F9. They stay on their line as you edit, are
+  remembered between sessions, and can be set while the program runs. Debug ▸ Delete All Breakpoints (Ctrl+Shift+F9).
+- **Stepping**: Continue (F5), Step Over (F10), Step Into (F11), Step Out (Shift+F11), Break All and Stop (Shift+F5), from
+  the Debug menu or the debug toolbar above the editor. The current line is marked with a yellow arrow and band.
+- **The Debug tab**: Locals (expand objects, lists and arrays), the Call Stack (click a frame to see its code and
+  variables), and an expression box that evaluates any expression where the program is paused.
+- Test projects still run their tests with F5, and MAUI apps run without debugging.
+
 ## 0.3.3
 
 Two more fixes found while re-testing 0.3.2 on a PC whose Documents folder has an Arabic name.

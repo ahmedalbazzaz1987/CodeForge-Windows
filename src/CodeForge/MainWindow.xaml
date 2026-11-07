@@ -92,8 +92,26 @@
                     <RowDefinition x:Name="PanelRow" Height="220" MinHeight="0"/>
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0" Background="{DynamicResource EditorBrush}">
-                    <TabControl x:Name="DocumentTabs" BorderThickness="0" Padding="0" Background="{DynamicResource EditorBrush}"/>
-                    <ScrollViewer x:Name="StartPage" VerticalScrollBarVisibility="Auto" Background="{DynamicResource EditorBrush}"/>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <!-- The debug toolbar, shown while debugging -->
+                    <Border x:Name="DebugBar" Grid.Row="0" Visibility="Collapsed" Background="{DynamicResource PanelBrush}"
+                            BorderBrush="#C2410C" BorderThickness="0,0,0,2" Padding="6,2">
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="DebugContinueButton" Style="{StaticResource IconButton}" Content="&#xE768;" Foreground="#16A34A" ToolTip="Continue (F5)"/>
+                            <Button x:Name="DebugPauseButton" Style="{StaticResource IconButton}" Content="&#xE769;" ToolTip="Break All"/>
+                            <Button x:Name="DebugStopButton" Style="{StaticResource IconButton}" Content="&#xE71A;" Foreground="#DC2626" ToolTip="Stop Debugging (Shift+F5)"/>
+                            <Border Width="1" Margin="6,4" Background="{DynamicResource BorderBrush}"/>
+                            <Button x:Name="DebugStepOverButton" Style="{StaticResource IconButton}" Content="&#xE72A;" ToolTip="Step Over (F10)"/>
+                            <Button x:Name="DebugStepIntoButton" Style="{StaticResource IconButton}" Content="&#xE74B;" ToolTip="Step Into (F11)"/>
+                            <Button x:Name="DebugStepOutButton" Style="{StaticResource IconButton}" Content="&#xE74A;" ToolTip="Step Out (Shift+F11)"/>
+                            <TextBlock x:Name="DebugStatus" VerticalAlignment="Center" Margin="10,0" Foreground="{DynamicResource SubtleTextBrush}"/>
+                        </StackPanel>
+                    </Border>
+                    <TabControl x:Name="DocumentTabs" Grid.Row="1" BorderThickness="0" Padding="0" Background="{DynamicResource EditorBrush}"/>
+                    <ScrollViewer x:Name="StartPage" Grid.Row="1" VerticalScrollBarVisibility="Auto" Background="{DynamicResource EditorBrush}"/>
                 </Grid>
                 <GridSplitter x:Name="PanelSplitter" Grid.Row="1" Height="4" HorizontalAlignment="Stretch" Background="{DynamicResource BorderBrush}" ShowsPreview="False"/>
                 <Border x:Name="BottomPanel" Grid.Row="2" Background="{DynamicResource PanelBrush}">
@@ -153,6 +171,34 @@
                                         </GridView>
                                     </ListView.View>
                                 </ListView>
+                            </DockPanel>
+                        </TabItem>
+                        <TabItem x:Name="DebugTab" Header="Debug">
+                            <DockPanel>
+                                <DockPanel DockPanel.Dock="Bottom" Margin="4">
+                                    <Button x:Name="EvaluateButton" DockPanel.Dock="Right" Content="Evaluate" Padding="10,2" Margin="6,0,0,0"/>
+                                    <TextBox x:Name="EvaluateInput" FontFamily="Cascadia Mono, Consolas"
+                                             ToolTip="An expression to evaluate where the program is paused, for example: total * 2 (Enter)"/>
+                                </DockPanel>
+                                <TextBlock x:Name="EvaluateResult" DockPanel.Dock="Bottom" Margin="8,0" FontFamily="Cascadia Mono, Consolas"
+                                           Foreground="{DynamicResource AccentBrush}" TextTrimming="CharacterEllipsis"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" MinWidth="120"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="280" MinWidth="100"/>
+                                    </Grid.ColumnDefinitions>
+                                    <DockPanel Grid.Column="0">
+                                        <TextBlock DockPanel.Dock="Top" Text="Locals" Margin="8,4" FontWeight="SemiBold"/>
+                                        <TreeView x:Name="LocalsTree" BorderThickness="0" Background="{DynamicResource EditorBrush}"
+                                                  FontFamily="Cascadia Mono, Consolas" FontSize="12"/>
+                                    </DockPanel>
+                                    <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="{DynamicResource BorderBrush}"/>
+                                    <DockPanel Grid.Column="2">
+                                        <TextBlock DockPanel.Dock="Top" Text="Call Stack" Margin="8,4" FontWeight="SemiBold"/>
+                                        <ListBox x:Name="CallStackList" BorderThickness="0" Background="{DynamicResource EditorBrush}" FontSize="12"/>
+                                    </DockPanel>
+                                </Grid>
                             </DockPanel>
                         </TabItem>
                         <TabItem x:Name="TerminalTab" Header="Terminal">

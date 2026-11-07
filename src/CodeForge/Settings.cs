@@ -26,6 +26,8 @@ public sealed class Settings
     public Dictionary<string, string> RunCommands { get; set; } = [];
     /// <summary>Bookmarked lines per file (Edit ▸ Bookmarks).</summary>
     public Dictionary<string, List<int>> Bookmarks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Breakpoint lines per file (Debug ▸ Toggle Breakpoint, or a click in the margin).</summary>
+    public Dictionary<string, List<int>> Breakpoints { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public double[]? WindowBounds { get; set; }
     public bool WindowMaximized { get; set; }
 

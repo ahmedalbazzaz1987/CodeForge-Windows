@@ -75,9 +75,12 @@ public static class ToolCheck
     public static string? InstallHint(string program) => Hints.GetValueOrDefault(Path.GetFileNameWithoutExtension(program));
 
     /// <summary>True if the program can be found the way cmd.exe finds it: a path, or a name on PATH with an extension from PATHEXT.</summary>
-    public static bool IsAvailable(string program, string? path = null, string? pathExt = null)
+    public static bool IsAvailable(string program, string? path = null, string? pathExt = null) => Find(program, path, pathExt) != null;
+
+    /// <summary>The full path of a program on PATH (trying PATHEXT's extensions), or null.</summary>
+    public static string? Find(string program, string? path = null, string? pathExt = null)
     {
-        if (program.Contains('\\') || program.Contains('/')) return File.Exists(program);
+        if (program.Contains('\\') || program.Contains('/')) return File.Exists(program) ? program : null;
         path ??= Environment.GetEnvironmentVariable("PATH") ?? "";
         pathExt ??= Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
         var extensions = Path.HasExtension(program) ? [""] : pathExt.Split(';', StringSplitOptions.RemoveEmptyEntries).Prepend("").ToArray();
@@ -85,11 +88,15 @@ public static class ToolCheck
         {
             foreach (var extension in extensions)
             {
-                try { if (File.Exists(Path.Combine(folder.Trim('"'), program + extension))) return true; }
+                try
+                {
+                    var candidate = Path.Combine(folder.Trim('"'), program + extension);
+                    if (File.Exists(candidate)) return candidate;
+                }
                 catch (ArgumentException) { }
             }
         }
-        return false;
+        return null;
     }
 }
 

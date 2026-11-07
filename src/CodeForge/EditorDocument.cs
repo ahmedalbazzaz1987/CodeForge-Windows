@@ -5,6 +5,7 @@ using System.Windows.Media;
 using CodeForge.Core;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Document;
+using ICSharpCode.AvalonEdit.Editing;
 using ICSharpCode.AvalonEdit.Rendering;
 using ICSharpCode.AvalonEdit.Search;
 
@@ -26,6 +27,12 @@ public sealed class EditorDocument
     private readonly DiagnosticRenderer diagnostics;
     private readonly List<TextAnchor> bookmarks = [];
     private readonly BookmarkRenderer bookmarkRenderer;
+    private readonly List<TextAnchor> breakpoints = [];
+    private readonly BreakpointMargin breakpointMargin;
+    private readonly ExecutionLineRenderer executionRenderer = new();
+
+    /// <summary>A breakpoint was set or cleared by clicking the margin: the window stores it and tells the debugger.</summary>
+    public event Action? BreakpointsChanged;
     private Encoding encoding = new UTF8Encoding(false);
 
     public EditorDocument(string? path, string text, string untitledName = "Untitled")
@@ -56,6 +63,10 @@ public sealed class EditorDocument
         Editor.TextArea.TextView.BackgroundRenderers.Add(diagnostics);
         bookmarkRenderer = new BookmarkRenderer(bookmarks);
         Editor.TextArea.TextView.BackgroundRenderers.Add(bookmarkRenderer);
+        Editor.TextArea.TextView.BackgroundRenderers.Add(executionRenderer);
+        // Breakpoints go in their own margin left of the line numbers, as in Visual Studio; a click there sets one.
+        breakpointMargin = new BreakpointMargin(this);
+        Editor.TextArea.LeftMargins.Insert(0, breakpointMargin);
         Editor.TextArea.PreviewKeyDown += ExpandSnippetOnTab;
         GroupTypingForUndo();
         Editor.TextChanged += (_, _) =>
@@ -188,6 +199,50 @@ public sealed class EditorDocument
     public string? DiagnosticAt(int offset) => diagnostics.MessageAt(offset);
 
     public void Detach() => Themes.Changed -= ApplyTheme;
+
+    // MARK: Breakpoints and the line the debugger stopped at
+
+    /// <summary>The lines with a breakpoint (1-based). Anchors keep them on their code as text is edited above them.</summary>
+    public List<int> BreakpointLines => breakpoints.Select(a => a.Line).Distinct().Order().ToList();
+
+    public void SetBreakpoints(IEnumerable<int> lines)
+    {
+        breakpoints.Clear();
+        foreach (var line in lines.Where(l => l >= 1 && l <= Editor.Document.LineCount)) AddBreakpoint(line);
+        breakpointMargin.InvalidateVisual();
+    }
+
+    public void ToggleBreakpoint(int line)
+    {
+        if (line < 1 || line > Editor.Document.LineCount) return;
+        if (breakpoints.RemoveAll(a => a.Line == line) == 0) AddBreakpoint(line);
+        breakpointMargin.InvalidateVisual();
+        BreakpointsChanged?.Invoke();
+    }
+
+    private void AddBreakpoint(int line)
+    {
+        var anchor = Editor.Document.CreateAnchor(Editor.Document.GetLineByNumber(line).Offset);
+        anchor.MovementType = AnchorMovementType.AfterInsertion;
+        anchor.SurviveDeletion = true;
+        breakpoints.Add(anchor);
+    }
+
+    /// <summary>The line where the debugger is stopped (0 for none): a yellow band and arrow, scrolled into view.</summary>
+    public int ExecutionLine { get; private set; }
+
+    public void SetExecutionLine(int line)
+    {
+        ExecutionLine = line;
+        executionRenderer.Line = line;
+        Editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        breakpointMargin.InvalidateVisual();
+        if (line >= 1 && line <= Editor.Document.LineCount)
+        {
+            Editor.ScrollTo(line, 1);
+            Editor.TextArea.Caret.Location = new TextLocation(line, 1);
+        }
+    }
 
     // MARK: Bookmarks
 
@@ -338,6 +393,87 @@ public sealed class DiagnosticRenderer(TextEditor editor) : IBackgroundRenderer
                 geometry.Freeze();
                 drawingContext.DrawGeometry(null, pen, geometry);
             }
+        }
+    }
+}
+
+/// <summary>The gutter for breakpoints (red dots) and the current statement while debugging (a yellow arrow).</summary>
+public sealed class BreakpointMargin(EditorDocument document) : AbstractMargin
+{
+    private const double MarginWidth = 16;
+
+    protected override Size MeasureOverride(Size availableSize) => new(MarginWidth, 0);
+
+    protected override void OnTextViewChanged(TextView? oldTextView, TextView? newTextView)
+    {
+        if (oldTextView != null) oldTextView.VisualLinesChanged -= Redraw;
+        base.OnTextViewChanged(oldTextView, newTextView);
+        if (newTextView != null) newTextView.VisualLinesChanged += Redraw;
+        InvalidateVisual();
+    }
+
+    private void Redraw(object? sender, EventArgs e) => InvalidateVisual();
+
+    protected override void OnRender(DrawingContext drawingContext)
+    {
+        var view = TextView;
+        drawingContext.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, RenderSize.Width, RenderSize.Height));   // takes clicks
+        if (view is not { VisualLinesValid: true }) return;
+        var lines = document.BreakpointLines.ToHashSet();
+        var red = new SolidColorBrush(Color.FromRgb(0xE5, 0x14, 0x00));
+        var yellow = new SolidColorBrush(Color.FromRgb(0xFF, 0xD7, 0x00));
+        red.Freeze();
+        yellow.Freeze();
+        foreach (var line in view.VisualLines)
+        {
+            var number = line.FirstDocumentLine.LineNumber;
+            var top = line.VisualTop - view.ScrollOffset.Y;
+            var center = new Point(MarginWidth / 2, top + line.Height / 2);
+            if (lines.Contains(number)) drawingContext.DrawEllipse(red, null, center, 5.5, 5.5);
+            if (number == document.ExecutionLine)
+            {
+                var arrow = new StreamGeometry();
+                using (var context = arrow.Open())
+                {
+                    context.BeginFigure(new Point(3, center.Y - 4), true, true);
+                    context.LineTo(new Point(9, center.Y - 4), false, false);
+                    context.LineTo(new Point(14, center.Y), false, false);
+                    context.LineTo(new Point(9, center.Y + 4), false, false);
+                    context.LineTo(new Point(3, center.Y + 4), false, false);
+                }
+                arrow.Freeze();
+                drawingContext.DrawGeometry(yellow, new Pen(Brushes.Black, 0.5), arrow);
+            }
+        }
+    }
+
+    protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonDown(e);
+        if (TextView is not { } view || !view.VisualLinesValid) return;
+        var line = view.GetVisualLineFromVisualTop(e.GetPosition(view).Y + view.ScrollOffset.Y);
+        if (line == null) return;
+        document.ToggleBreakpoint(line.FirstDocumentLine.LineNumber);
+        e.Handled = true;
+    }
+}
+
+/// <summary>A yellow band on the line where the debugger is stopped.</summary>
+public sealed class ExecutionLineRenderer : IBackgroundRenderer
+{
+    public int Line { get; set; }
+
+    public KnownLayer Layer => KnownLayer.Background;
+
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (Line < 1 || !textView.VisualLinesValid) return;
+        var band = new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xD7, 0x00));
+        band.Freeze();
+        foreach (var line in textView.VisualLines)
+        {
+            if (line.FirstDocumentLine.LineNumber != Line) continue;
+            drawingContext.DrawRectangle(band, null, new Rect(0, line.VisualTop - textView.ScrollOffset.Y, textView.ActualWidth, line.Height));
         }
     }
 }

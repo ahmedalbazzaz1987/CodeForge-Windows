@@ -52,7 +52,7 @@ public partial class MainWindow : Window
         UpdateChrome();
         Themes.Changed += UpdateChrome;
         Closing += (_, e) => { if (!ConfirmCloseAll()) e.Cancel = true; else SaveSession(); };
-        Closed += (_, _) => { runner.Stop(); terminal.Stop(); };
+        Closed += (_, _) => { debugSession?.Stop(); runner.Stop(); terminal.Stop(); };
     }
 
     // MARK: Menus and shortcuts
@@ -149,9 +149,17 @@ public partial class MainWindow : Window
             Item("_Clean Solution", Clean, "", () => !runner.IsRunning && HasFolder()));
 
         Menu("_Debug",
-            Item("_Start", Start, "F5", () => !runner.IsRunning),
-            Item("Start _Without Debugging", Start, "Ctrl+F5", () => !runner.IsRunning),
-            Item("Sto_p", runner.Stop, "Shift+F5", () => runner.IsRunning),
+            Item("_Start Debugging / Continue", StartDebugging, "F5", () => (!runner.IsRunning && debugSession == null) || debugSession?.State == DebugState.Paused),
+            Item("Start _Without Debugging", Start, "Ctrl+F5", () => !runner.IsRunning && debugSession == null),
+            Item("Sto_p", StopAll, "Shift+F5", () => runner.IsRunning || debugSession != null),
+            Line(),
+            Item("Step _Over", () => debugSession?.StepOver(), "F10", () => debugSession?.State == DebugState.Paused),
+            Item("Step _Into", () => debugSession?.StepInto(), "F11", () => debugSession?.State == DebugState.Paused),
+            Item("Step Ou_t", () => debugSession?.StepOut(), "Shift+F11", () => debugSession?.State == DebugState.Paused),
+            Item("_Break All", () => debugSession?.Pause(), "Ctrl+Alt+Pause", () => debugSession?.State == DebugState.Running),
+            Line(),
+            Item("Toggle _Breakpoint", ToggleBreakpoint, "F9", HasDocument),
+            Item("_Delete All Breakpoints", DeleteAllBreakpoints, "Ctrl+Shift+F9", () => settings.Breakpoints.Count > 0),
             Line(),
             Item("Set _Run Command…", EditRunCommand, "", HasFolder));
 
@@ -189,8 +197,20 @@ public partial class MainWindow : Window
         FindResults.MouseDoubleClick += (_, _) => { if (FindResults.SelectedItem is LocationRow row) OpenPath(row.FullPath, row.Line, row.Column); };
         UndoButton.Click += (_, _) => Undo();
         RedoButton.Click += (_, _) => Redo();
-        StartButton.Click += (_, _) => Start();
-        StopButton.Click += (_, _) => runner.Stop();
+        StartButton.Click += (_, _) => StartDebugging();
+        StopButton.Click += (_, _) => StopAll();
+        DebugContinueButton.Click += (_, _) => debugSession?.Resume();
+        DebugPauseButton.Click += (_, _) => debugSession?.Pause();
+        DebugStopButton.Click += (_, _) => debugSession?.Stop();
+        DebugStepOverButton.Click += (_, _) => debugSession?.StepOver();
+        DebugStepIntoButton.Click += (_, _) => debugSession?.StepInto();
+        DebugStepOutButton.Click += (_, _) => debugSession?.StepOut();
+        EvaluateButton.Click += (_, _) => EvaluateExpression();
+        EvaluateInput.KeyDown += (_, e) => { if (e.Key == Key.Enter) { EvaluateExpression(); e.Handled = true; } };
+        CallStackList.SelectionChanged += (_, _) =>
+        {
+            if (!showingFrames && CallStackList.SelectedItem is ListBoxItem { Tag: StackFrameInfo frame }) SelectFrame(frame);
+        };
         BuildButton.Click += (_, _) => Build();
         ConfigurationBox.ItemsSource = new[] { "Debug", "Release" };
         ConfigurationBox.SelectedItem = settings.Configuration;
@@ -617,6 +637,8 @@ public partial class MainWindow : Window
         UpdateTab(document);
         document.SetDiagnostics(DiagnosticsFor(document));
         if (document.Path != null && settings.Bookmarks.TryGetValue(document.Path, out var saved)) document.SetBookmarks(saved);
+        if (document.Path != null && settings.Breakpoints.TryGetValue(document.Path, out var breakpointLines)) document.SetBreakpoints(breakpointLines);
+        document.BreakpointsChanged += () => BreakpointsChanged(document);
     }
 
     private void UpdateTab(EditorDocument document)
@@ -922,6 +944,301 @@ public partial class MainWindow : Window
         var end = editor.Document.CreateAnchor(start + text.Length);
         lastToolboxInsert = (document, end, editor.Document.TextLength, editor.CaretOffset);
         editor.TextArea.Focus();
+    }
+
+    // MARK: Debugging
+
+    private DebugSession? debugSession;
+    private StackFrameInfo? selectedFrame;
+    private bool showingFrames;
+
+    /// <summary>Where CodeForge keeps the debuggers it downloads (netcoredbg, debugpy).</summary>
+    private static string DebuggerFolder(string name) =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodeForge", name);
+
+    /// <summary>
+    /// F5, as in Visual Studio: debugs a .NET program or a Python file, continues when paused, and runs anything else
+    /// without debugging (test projects run their tests, class libraries say they can't start).
+    /// </summary>
+    private void StartDebugging()
+    {
+        if (debugSession is { State: DebugState.Paused }) { debugSession.Resume(); return; }
+        if (debugSession != null || runner.IsRunning) return;
+        if (CustomRunCommand == null && ProjectRunPlan() != null && workspace != null &&
+            DebugTools.DotNetProject(workspace) is { } project && BuildSystem.LibraryProject(workspace) == null)
+        {
+            var text = File.ReadAllText(project);
+            if (BuildSystem.IsTestProject(text) || text.Contains("<UseMaui>true</UseMaui>")) { Start(); return; }
+            StartDotNetDebugging(project);
+            return;
+        }
+        if (CustomRunCommand == null && ProjectRunPlan() == null && Current is { Language.Id: "python" } document)
+        {
+            StartPythonDebugging(document);
+            return;
+        }
+        Start();
+    }
+
+    private void StopAll()
+    {
+        if (debugSession != null) debugSession.Stop();
+        else runner.Stop();
+    }
+
+    /// <summary>C#, VB.NET and F#: build a Debug build, then run it under netcoredbg (downloaded once, with the user's OK).</summary>
+    private async void StartDotNetDebugging(string project)
+    {
+        var folder = DebuggerFolder("netcoredbg");
+        var netcoredbg = DebugTools.NetcoredbgPath(folder);
+        if (!File.Exists(netcoredbg))
+        {
+            var answer = MessageBox.Show(this,
+                "CodeForge debugs C#, VB.NET and F# with netcoredbg, Samsung's open-source .NET debugger (MIT license). " +
+                "It will download it from GitHub (about 10 MB) into its own folder. This happens once.\n\nInstall it now?",
+                "Install the .NET debugger?", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            if (answer != MessageBoxResult.OK) return;
+            if (!await DownloadNetcoredbg(folder) || !File.Exists(netcoredbg)) return;
+        }
+        if (ToolCheck.Find("dotnet") is not { } dotnet)
+        {
+            ShowError("The .NET SDK wasn't found", "Install it from https://dot.net, then restart CodeForge.");
+            return;
+        }
+        SaveAll();
+        var projectFolder = Path.GetDirectoryName(project)!;
+        // Always a Debug build, whatever the toolbar says: a Release build can't stop on most lines.
+        afterRun = () =>
+        {
+            if (DebugTools.DotNetAssembly(project) is not { } assembly)
+            {
+                ShowError("The program wasn't found", $"The build didn't produce {Path.GetFileNameWithoutExtension(project)}.dll in bin\\Debug.");
+                return;
+            }
+            StartSession(DebugTools.DotNet(netcoredbg, dotnet, assembly, projectFolder), Path.GetFileName(assembly));
+        };
+        RunCommand("dotnet build -c Debug " + CommandTemplate.Quote(project), projectFolder, "Building for debugging…");
+    }
+
+    private async Task<bool> DownloadNetcoredbg(string folder)
+    {
+        ShowPanel(OutputTab);
+        OutputText.Clear();
+        AppendOutput($"Downloading netcoredbg from {DebugTools.NetcoredbgDownloadUrl}…\n");
+        StatusText.Text = "Installing the .NET debugger…";
+        try
+        {
+            using var http = new System.Net.Http.HttpClient();
+            var bytes = await http.GetByteArrayAsync(DebugTools.NetcoredbgDownloadUrl);
+            var archive = Path.Combine(Path.GetTempPath(), "netcoredbg-win64.zip");
+            await File.WriteAllBytesAsync(archive, bytes);
+            if (Directory.Exists(folder)) Directory.Delete(folder, true);
+            System.IO.Compression.ZipFile.ExtractToDirectory(archive, folder, overwriteFiles: true);
+            File.Delete(archive);
+            AppendOutput($"netcoredbg is installed in {folder}\n");
+            StatusText.Text = "The .NET debugger is installed";
+            return true;
+        }
+        catch (Exception error)
+        {
+            AppendOutput($"The download failed: {error.Message}\n");
+            ShowError("Couldn't install the .NET debugger", error.Message);
+            StatusText.Text = "Ready";
+            return false;
+        }
+    }
+
+    /// <summary>Python files run under debugpy, installed with pip into CodeForge's folder the first time.</summary>
+    private void StartPythonDebugging(EditorDocument document)
+    {
+        if (document.Path == null && !SaveAs(document)) return;
+        SaveAll();
+        if (ToolCheck.Find("python") is not { } python || python.Contains(@"\WindowsApps\", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowError("Python wasn't found", "Install Python 3 from https://www.python.org (or: winget install Python.Python.3.13), then restart CodeForge.");
+            return;
+        }
+        var file = document.Path!;
+        var folder = workspace != null && file.StartsWith(workspace, StringComparison.OrdinalIgnoreCase) ? workspace : Path.GetDirectoryName(file)!;
+        var debugpy = DebuggerFolder("debugpy");
+        void Launch() => StartSession(DebugTools.Python(python, debugpy, file, folder), Path.GetFileName(file));
+        if (DebugTools.DebugpyInstalled(debugpy)) { Launch(); return; }
+        var answer = MessageBox.Show(this,
+            "CodeForge debugs Python with debugpy. It will install it with pip (about 20 MB) into its own folder. This happens once.\n\nInstall it now?",
+            "Install the Python debugger?", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.OK) return;
+        afterRun = Launch;
+        RunCommand($"{CommandTemplate.Quote(python)} -m pip install --disable-pip-version-check --upgrade --target {CommandTemplate.Quote(debugpy)} debugpy",
+                   folder, "Installing the Python debugger…");
+    }
+
+    private void StartSession(DebugConfiguration configuration, string title)
+    {
+        foreach (var document in documents) StoreBreakpoints(document);
+        var session = new DebugSession(configuration, action => Dispatcher.BeginInvoke(action));
+        session.Breakpoints = () => settings.Breakpoints.ToDictionary(b => b.Key, b => (IReadOnlyCollection<int>)b.Value, StringComparer.OrdinalIgnoreCase);
+        session.Output += (text, _) =>
+        {
+            AppendOutput(ConsoleText.StripAnsi(text.Replace("\r\n", "\n")));
+            if (!openedBrowser && BuildSystem.ListeningAddress(text) is { } address)
+            {
+                openedBrowser = true;
+                AppendOutput($"Opening {address} in your browser…\n");
+                if (Environment.GetEnvironmentVariable("CF_NO_BROWSER") == null) Shell(address);
+            }
+        };
+        session.Stopped += DebuggerStopped;
+        session.StateChanged += DebugStateChanged;
+        ShowPanel(OutputTab);
+        openedBrowser = false;
+        AppendOutput($"\nDebugging {title}\n");
+        if (!session.Start())
+        {
+            ShowError("Couldn't start the debugger", $"{Path.GetFileName(configuration.Adapter)} didn't start.");
+            return;
+        }
+        debugSession = session;
+        DebugBar.Visibility = Visibility.Visible;
+        DebugStateChanged();
+    }
+
+    private void DebuggerStopped()
+    {
+        if (debugSession is not { } session) return;
+        SelectFrame(session.Frames.FirstOrDefault(f => f.File != null && File.Exists(f.File)) ?? session.Frames.FirstOrDefault());
+        ShowPanel(DebugTab);
+        Activate();
+    }
+
+    private void SelectFrame(StackFrameInfo? frame)
+    {
+        if (debugSession is not { } session || frame == null) return;
+        selectedFrame = frame;
+        foreach (var document in documents) document.SetExecutionLine(0);
+        if (frame.File != null && File.Exists(frame.File))
+        {
+            OpenPath(frame.File);
+            Current?.SetExecutionLine(frame.Line);
+        }
+        showingFrames = true;
+        CallStackList.Items.Clear();
+        foreach (var each in session.Frames)
+        {
+            var location = each.File != null ? $"  —  {Path.GetFileName(each.File)}:{each.Line}" : "";
+            var item = new ListBoxItem { Content = each.Name + location, Tag = each, IsSelected = each.Id == frame.Id };
+            if (each.File == null || !File.Exists(each.File)) item.Foreground = (Brush)Application.Current.Resources["SubtleTextBrush"];
+            CallStackList.Items.Add(item);
+        }
+        showingFrames = false;
+        session.Locals(frame.Id, variables =>
+        {
+            LocalsTree.Items.Clear();
+            foreach (var variable in variables) LocalsTree.Items.Add(VariableItem(variable));
+        });
+    }
+
+    /// <summary>A Locals row: name = value (type). Objects, lists and arrays expand on demand.</summary>
+    private TreeViewItem VariableItem(DebugVariable variable)
+    {
+        var header = new TextBlock();
+        header.Inlines.Add(new System.Windows.Documents.Run(variable.Name) { FontWeight = FontWeights.SemiBold });
+        header.Inlines.Add(new System.Windows.Documents.Run(" = " + variable.Value));
+        if (variable.Type.Length > 0)
+            header.Inlines.Add(new System.Windows.Documents.Run("   " + variable.Type) { Foreground = (Brush)Application.Current.Resources["SubtleTextBrush"] });
+        var item = new TreeViewItem { Header = header, Tag = variable, ToolTip = $"{variable.Name} = {variable.Value}" };
+        if (variable.Reference > 0)
+        {
+            item.Items.Add(new TreeViewItem { Header = "Loading…" });
+            item.Expanded += (_, e) =>
+            {
+                if (e.OriginalSource != item || variable.Children != null) return;
+                variable.Children = [];
+                debugSession?.Variables(variable.Reference, children =>
+                {
+                    variable.Children = children;
+                    item.Items.Clear();
+                    foreach (var child in children) item.Items.Add(VariableItem(child));
+                });
+            };
+        }
+        return item;
+    }
+
+    private void EvaluateExpression()
+    {
+        var expression = EvaluateInput.Text.Trim();
+        if (expression.Length == 0) return;
+        if (debugSession is not { State: DebugState.Paused } session)
+        {
+            EvaluateResult.Text = "Expressions can be evaluated while the program is paused (at a breakpoint).";
+            return;
+        }
+        session.Evaluate(expression, selectedFrame?.Id, result => EvaluateResult.Text = $"{expression} = {result}");
+    }
+
+    private void DebugStateChanged()
+    {
+        if (debugSession is not { } session) return;
+        var paused = session.State == DebugState.Paused;
+        DebugContinueButton.IsEnabled = paused;
+        DebugPauseButton.IsEnabled = session.State == DebugState.Running;
+        DebugStepOverButton.IsEnabled = DebugStepIntoButton.IsEnabled = DebugStepOutButton.IsEnabled = paused;
+        DebugStatus.Text = session.State switch
+        {
+            DebugState.Starting => "Starting…",
+            DebugState.Running => "Running",
+            DebugState.Paused => "Paused — " + session.StopReason,
+            _ => "Ended",
+        };
+        if (session.State == DebugState.Running)
+        {
+            foreach (var document in documents) document.SetExecutionLine(0);
+            StatusText.Text = "Debugging…";
+        }
+        else if (paused) StatusText.Text = "Paused";
+        if (session.State == DebugState.Ended)
+        {
+            debugSession = null;
+            selectedFrame = null;
+            foreach (var document in documents) document.SetExecutionLine(0);
+            LocalsTree.Items.Clear();
+            CallStackList.Items.Clear();
+            EvaluateResult.Text = "";
+            DebugBar.Visibility = Visibility.Collapsed;
+            StatusText.Text = "Debugging ended";
+        }
+        UpdateChrome();
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    private void ToggleBreakpoint()
+    {
+        if (Current is not { } document) return;
+        if (document.Path == null) { StatusText.Text = "Save the file first to set a breakpoint"; return; }
+        document.ToggleBreakpoint(document.CaretPosition.Line);
+    }
+
+    private void BreakpointsChanged(EditorDocument document)
+    {
+        if (document.Path == null) { StatusText.Text = "Save the file first to set a breakpoint"; document.SetBreakpoints([]); return; }
+        StoreBreakpoints(document);
+        settings.Save();
+        debugSession?.SendBreakpoints(document.Path, document.BreakpointLines);
+    }
+
+    private void StoreBreakpoints(EditorDocument document)
+    {
+        if (document.Path == null) return;
+        var lines = document.BreakpointLines;
+        if (lines.Count == 0) settings.Breakpoints.Remove(document.Path); else settings.Breakpoints[document.Path] = lines;
+    }
+
+    private void DeleteAllBreakpoints()
+    {
+        foreach (var (file, _) in settings.Breakpoints) debugSession?.SendBreakpoints(file, []);
+        settings.Breakpoints.Clear();
+        foreach (var document in documents) document.SetBreakpoints([]);
+        settings.Save();
     }
 
     // MARK: Run, build and test
@@ -1484,10 +1801,10 @@ public partial class MainWindow : Window
         Title = designerTitle + (document != null ? document.DisplayName + (document.IsDirty ? " ●" : "") + " - " : "") + (workspace != null ? Path.GetFileName(workspace.TrimEnd('\\')) + " - " : "") + "CodeForge";
         var plan = CustomRunCommand == null ? ProjectRunPlan() : null;
         StartLabel.Text = CustomRunCommand != null || plan != null ? Path.GetFileName(workspace!.TrimEnd('\\')) : document?.DisplayName ?? "Start";
-        StartButton.ToolTip = plan != null ? $"Start {plan.Name}: {plan.Run} (F5)" : "Start (F5)";
-        StartButton.IsEnabled = !runner.IsRunning;
-        StopButton.IsEnabled = runner.IsRunning;
-        StatusBar.Background = runner.IsRunning ? Themes.Brush("#C2410C") : workspace == null ? Themes.Brush("#475569") : (Brush)Application.Current.Resources["AccentBrush"];
+        StartButton.ToolTip = plan != null ? $"Start {plan.Name}: {plan.Run} (F5 debugs, Ctrl+F5 runs without debugging)" : "Start (F5)";
+        StartButton.IsEnabled = (!runner.IsRunning && debugSession == null) || debugSession?.State == DebugState.Paused;
+        StopButton.IsEnabled = runner.IsRunning || debugSession != null;
+        StatusBar.Background = runner.IsRunning || debugSession != null ? Themes.Brush("#C2410C") : workspace == null ? Themes.Brush("#475569") : (Brush)Application.Current.Resources["AccentBrush"];
         StatusLanguage.Text = document?.Language.Name ?? (CurrentDesigner != null ? "Windows Forms Designer" : "");
         UpdatePosition();
     }
