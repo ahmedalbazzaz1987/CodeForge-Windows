@@ -166,3 +166,34 @@ public static class KeyNames
         return string.Join("+", parts);
     }
 }
+
+/// <summary>Turns a browser's registered open command into a program and arguments for one address.</summary>
+public static class BrowserCommand
+{
+    /// <summary>
+    /// <c>"C:\…\msedge.exe" --single-argument %1</c> and <c>https://x</c> → (<c>C:\…\msedge.exe</c>, <c>--single-argument https://x</c>).
+    /// Null when the command is empty.
+    /// </summary>
+    public static (string Program, string Arguments)? Build(string? command, string address)
+    {
+        command = command?.Trim();
+        if (string.IsNullOrEmpty(command)) return null;
+        string program, rest;
+        if (command.StartsWith('"'))
+        {
+            var end = command.IndexOf('"', 1);
+            if (end < 0) return null;
+            program = command[1..end];
+            rest = command[(end + 1)..].Trim();
+        }
+        else
+        {
+            var space = command.IndexOf(' ');
+            program = space < 0 ? command : command[..space];
+            rest = space < 0 ? "" : command[(space + 1)..].Trim();
+        }
+        var quoted = address.Contains(' ') ? $"\"{address}\"" : address;
+        var arguments = rest.Contains("%1") ? rest.Replace("\"%1\"", quoted).Replace("%1", quoted) : (rest + " " + quoted).Trim();
+        return (program, arguments);
+    }
+}

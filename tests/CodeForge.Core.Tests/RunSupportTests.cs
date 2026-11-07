@@ -147,4 +147,15 @@ public class RunSupportTests
         Assert.Equal(31, failed.Line);
         Assert.Equal("Test failed: CFT_MSTest.Test1.Intentional_Failure — Assert.AreEqual failed. Expected:<10>. Actual:<4>.", failed.Message);
     }
+
+    [Fact]
+    public void BrowserCommandsTakeTheAddress()
+    {
+        Assert.Equal(("C:\\Edge\\msedge.exe", "--single-argument file:///C:/a.html"),
+            BrowserCommand.Build("\"C:\\Edge\\msedge.exe\" --single-argument %1", "file:///C:/a.html"));
+        Assert.Equal(("C:\\Chrome\\chrome.exe", "--osint -- \"https://x y\""),
+            BrowserCommand.Build("\"C:\\Chrome\\chrome.exe\" --osint -- \"%1\"", "https://x y"));
+        Assert.Equal(("firefox.exe", "https://x"), BrowserCommand.Build("firefox.exe", "https://x"));
+        Assert.Null(BrowserCommand.Build("", "https://x"));
+    }
 }

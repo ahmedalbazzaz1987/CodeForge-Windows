@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.3
+
+Two more fixes found while re-testing 0.3.2 on a PC whose Documents folder has an Arabic name.
+
+- **F# errors open at their line.** The F# compiler wrote file names in the old code page ("?????"), so the Error List
+  couldn't find the file. It now reports in UTF-8, like C#.
+- **HTML pages open in the default web browser** even on a PC where no program is set for .html files (Windows showed
+  its "Open with" box instead).
+
 ## 0.3.2
 
 Fixes from testing every language on Windows, mostly for Arabic and other non-English text. By Ahmed Al-Bazzaz.

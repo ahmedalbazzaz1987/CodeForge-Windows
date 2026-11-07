@@ -57,6 +57,9 @@ public sealed class Runner
         info.Environment["PYTHONIOENCODING"] = "utf-8";
         info.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
         info.Environment["DOTNET_NOLOGO"] = "1";
+        // MSBuild reads environment variables as properties: the F# compiler then reports in UTF-8 too (C# already does),
+        // so file names in its errors keep their Arabic letters and the Error List can open them.
+        info.Environment["Utf8Output"] = "true";
         if (environment != null) foreach (var (key, value) in environment) info.Environment[key] = value;
 
         var started = new Process { StartInfo = info, EnableRaisingEvents = true };

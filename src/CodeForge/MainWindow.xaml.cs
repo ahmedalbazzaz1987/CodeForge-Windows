@@ -968,7 +968,7 @@ public partial class MainWindow : Window
             ShowPanel(OutputTab);
             OutputText.Clear();
             AppendOutput($"Opening {document.DisplayName} in your browser…\n");
-            Shell(document.Path!);
+            OpenInBrowser(document.Path!);
             StatusText.Text = $"Opened {document.DisplayName}";
             return;
         }
@@ -1525,6 +1525,29 @@ public partial class MainWindow : Window
     public static void Shell(string target)
     {
         try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); } catch (Exception) { }
+    }
+
+    /// <summary>
+    /// Opens a local page in the default web browser. Opening the .html file itself shows Windows' "Open with" box when no
+    /// program is set for .html files, even though a browser is set for web links, so this asks for the https handler.
+    /// </summary>
+    public static void OpenInBrowser(string path)
+    {
+        var address = new Uri(path).AbsoluteUri;
+        try
+        {
+            string? ProgId(string scheme) => Microsoft.Win32.Registry.CurrentUser
+                .OpenSubKey($@"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\{scheme}\UserChoice")?.GetValue("ProgId") as string;
+            if ((ProgId("https") ?? ProgId("http")) is { } progId &&
+                BrowserCommand.Build(Microsoft.Win32.Registry.ClassesRoot.OpenSubKey($@"{progId}\shell\open\command")?.GetValue("") as string, address) is { } browser &&
+                File.Exists(browser.Program))
+            {
+                Process.Start(new ProcessStartInfo(browser.Program, browser.Arguments) { UseShellExecute = false });
+                return;
+            }
+        }
+        catch (Exception) { }
+        Shell(address);
     }
 
     private static bool SamePath(string? a, string? b) =>
