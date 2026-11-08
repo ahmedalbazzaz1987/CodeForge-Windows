@@ -772,9 +772,10 @@ public partial class MainWindow : Window
     private void AddDocument(EditorDocument document)
     {
         documents.Add(document);
-        var tab = new TabItem { Tag = document, Content = document.Editor };
+        var tab = new TabItem { Tag = document };
         // HTML pages get Design, Split and Source views.
-        if (document.Language.Id == "html")
+        if (document.Language.Id != "html") tab.Content = document.Editor;
+        else
         {
             var page = new HtmlDesignHost(document);
             page.ElementClicked += (tag, index) =>

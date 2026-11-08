@@ -328,7 +328,9 @@ public sealed class DebugSession
         {
             if (response["success"]?.GetValue<bool>() == false)
             {
-                Output?.Invoke($"Couldn't start debugging: {(string?)response["message"] ?? "unknown error"}\n", DebugOutputKind.Error);
+                // Delve puts the reason in body.error.format; "message" is only "Failed to launch".
+                var reason = (string?)response["body"]?["error"]?["format"] ?? (string?)response["message"] ?? "unknown error";
+                Output?.Invoke($"Couldn't start debugging: {reason}\n", DebugOutputKind.Error);
                 Stop();
             }
         });
