@@ -6,4 +6,8 @@
     <RootNamespace>CodeForge.Core</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="CodeForge.Core.Tests" />
+  </ItemGroup>
+
 </Project>

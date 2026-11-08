@@ -23,6 +23,8 @@ public sealed class EditorDocument
     public string DisplayName => Path != null ? System.IO.Path.GetFileName(Path) : UntitledName;
     public event Action? StateChanged;
     public event Action? CaretMoved;
+    /// <summary>The file was written (its path may be new): IntelliSense tells the language server.</summary>
+    public event Action? Saved;
 
     private readonly DiagnosticRenderer diagnostics;
     private readonly List<TextAnchor> bookmarks = [];
@@ -160,6 +162,7 @@ public sealed class EditorDocument
         File.WriteAllText(Path, Editor.Text, encoding);
         Editor.IsModified = false;
         StateChanged?.Invoke();
+        Saved?.Invoke();
     }
 
     public void ApplyTheme()
@@ -335,10 +338,17 @@ public sealed class DiagnosticRenderer(TextEditor editor) : IBackgroundRenderer
             if (diagnostic.Line < 1 || diagnostic.Line > document.LineCount) continue;
             var line = document.GetLineByNumber(diagnostic.Line);
             int start = line.Offset, end = line.EndOffset;
-            if (diagnostic.Column is { } column && column - 1 < line.Length)
+            if (diagnostic.Column is { } column && column - 1 < line.Length && diagnostic.EndLine == diagnostic.Line &&
+                diagnostic.EndColumn is { } endColumn && endColumn > column)
+            {
+                // A language server says exactly where the problem ends.
+                start = line.Offset + column - 1;
+                end = Math.Min(line.Offset + endColumn - 1, line.EndOffset);
+            }
+            else if (diagnostic.Column is { } column2 && column2 - 1 < line.Length)
             {
                 // From the column to the end of the word there.
-                start = line.Offset + column - 1;
+                start = line.Offset + column2 - 1;
                 end = start;
                 while (end < line.EndOffset && (char.IsLetterOrDigit(document.GetCharAt(end)) || document.GetCharAt(end) == '_')) end++;
                 if (end == start) end = Math.Min(start + 1, line.EndOffset);

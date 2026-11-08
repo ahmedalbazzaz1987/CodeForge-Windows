@@ -108,6 +108,20 @@ if ($text -notmatch "dotnet test" -or $text -notmatch "Passed!") { $failed += "T
 $text = Report "20-switch-project" @{ CF_OPEN = "$demo;$demo\first.py"; CF_ACTIONS = "open:$work\Lib1,dump"; CF_DELAY = "6" }
 if ($text -match "TABS: .*first.py") { $failed += "Switching projects left the old tabs open" }
 
+# IntelliSense without a server (VB.NET): keywords, snippets and the file's words.
+Shot "21-vb-completion" @{ CF_OPEN = "$work\BrokenVB;$work\BrokenVB\Program.vb"; CF_ACTIONS = "caret:Console.WriteLine(to,complete"; CF_DELAY = "3" }
+# IntelliSense from a language server: Jedi, installed with pip the way Edit > IntelliSense > Install does it.
+$sense = "$work\Sense"
+New-Item -ItemType Directory -Force $sense | Out-Null
+Set-Content "$sense\main.py" "import os`r`n`r`nclass Greeter:`r`n    def greet(self, name):`r`n        return 'Hello ' + name`r`n`r`ng = Greeter()`r`ng.gr`r`nprint(missing +)`r`n"
+python -m pip install --disable-pip-version-check --quiet --target "$env:LOCALAPPDATA\CodeForge\LanguageServers\jedi" jedi-language-server
+$text = Report "22-python-intellisense" @{ CF_OPEN = "$sense;$sense\main.py"; CF_ACTIONS = "caret:g.gr,complete,dump"; CF_ACTION_GAP = "5"; CF_DELAY = "4" }
+if ($text -notmatch "SERVER: Jedi") { $failed += "Jedi didn't start for Python" }
+if ($text -notmatch "main.py:9:") { $failed += "No live error from Jedi" }
+$text = Report "23-python-definition" @{ CF_OPEN = "$sense;$sense\main.py"; CF_ACTIONS = "caret:= Greet,definition,report,caret:class Gree,references,dump"; CF_ACTION_GAP = "4" }
+if ($text -notmatch "main.py:3") { $failed += "Go To Definition (Jedi) didn't reach line 3" }
+if ($text -notmatch "(?s)FINDRESULTS:.*main.py:3.*main.py:7") { $failed += "Find All References (Jedi)" }
+
 if (Test-Path "$env:APPDATA\CodeForge\errors.log") { Get-Content "$env:APPDATA\CodeForge\errors.log" }
 Get-ChildItem $work -Filter errors.log -Recurse | ForEach-Object { Write-Host "== $($_.FullName)"; Get-Content $_.FullName }
 if ($failed.Count -gt 0) { throw "Screenshots failed: $($failed -join ', ')" }

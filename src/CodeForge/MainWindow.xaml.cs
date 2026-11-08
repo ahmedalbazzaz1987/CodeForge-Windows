@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     /// <summary>A place in the code, for Navigate Backward and Forward.</summary>
     private readonly record struct Place(string Path, int Line);
     private List<Diagnostic> diagnostics = [];
+    private readonly IntelliSense intelliSense;
 
     public string? Workspace => workspace;
     public EditorDocument? Current => (DocumentTabs.SelectedItem as TabItem)?.Tag as EditorDocument;
@@ -45,6 +46,22 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         terminal = new Terminal(TerminalText, TerminalInput, TerminalPrompt);
+        intelliSense = new IntelliSense
+        {
+            Workspace = () => workspace,
+            Documents = () => documents,
+            OpenLocation = (path, line, column) => OpenPath(path, line, column),
+            ShowReferences = (summary, matches) => ShowFindResults(summary, matches),
+            Status = text => StatusText.Text = text,
+            DiagnosticsChanged = RefreshDiagnostics,
+            RunInstall = (command, folder, done) =>
+            {
+                if (runner.IsRunning) { ShowError("Something is running", "Stop it first (Shift+F5), then install again."); return; }
+                afterRun = done;
+                RunCommand(command, folder, "Installing IntelliSense…");
+            },
+            Owner = () => this,
+        };
         PropertiesHost.Child = properties;
         BuildMenu();
         WireControls();
@@ -52,7 +69,7 @@ public partial class MainWindow : Window
         UpdateChrome();
         Themes.Changed += UpdateChrome;
         Closing += (_, e) => { if (!ConfirmCloseAll()) e.Cancel = true; else SaveSession(); };
-        Closed += (_, _) => { debugSession?.Stop(); runner.Stop(); terminal.Stop(); };
+        Closed += (_, _) => { debugSession?.Stop(); runner.Stop(); terminal.Stop(); intelliSense.StopAll(); };
     }
 
     // MARK: Menus and shortcuts
@@ -74,6 +91,12 @@ public partial class MainWindow : Window
             return new MenuItem { Header = header, Command = command, InputGestureText = KeyNames.Display(gesture) };
         }
         Separator Line() => new();
+        MenuItem SubMenu(string header, params object[] items)
+        {
+            var menu = new MenuItem { Header = header };
+            foreach (var item in items) menu.Items.Add(item);
+            return menu;
+        }
         bool HasFolder() => workspace != null;
         bool HasDocument() => Current != null;
         bool HasTab() => Current != null || CurrentDesigner != null;
@@ -105,6 +128,15 @@ public partial class MainWindow : Window
             Line(),
             Item("_Go To Line…", GoToLine, "Ctrl+G", HasDocument),
             Item("Go To _File…", QuickOpen, "Ctrl+T"),
+            Item("Go To _Definition", () => intelliSense.GoToDefinition(Current), "F12", HasDocument),
+            Item("Find All _References", () => intelliSense.FindAllReferences(Current), "Shift+F12", HasDocument),
+            Line(),
+            SubMenu("_IntelliSense",
+                Item("_List Members", () => intelliSense.Complete(Current), "Ctrl+J", HasDocument),
+                Item("Complete _Word", () => intelliSense.Complete(Current), "Ctrl+Space", HasDocument),
+                Item("_Quick Info", () => intelliSense.ShowQuickInfo(Current), "Ctrl+Shift+I", HasDocument),
+                Line(),
+                Item("_Install Language Server for This File…", () => intelliSense.Install(Current), "", HasDocument)),
             Line(),
             Item("Toggle Line _Comment", ToggleComment, "Ctrl+K", HasDocument),
             Item("_Duplicate Line", DuplicateLine, "Ctrl+D", HasDocument),
@@ -408,6 +440,7 @@ public partial class MainWindow : Window
         var documentsInside = documents.Where(d => Inside(d.Path)).ToList();
         if (!designersInside.All(ConfirmDiscard) || !documentsInside.All(ConfirmDiscard)) return false;
         runner.Stop();
+        intelliSense.CloseFolder(folder);
         foreach (var designer in designersInside) RemoveDesigner(designer);
         foreach (var document in documentsInside) RemoveDocument(document);
         OutputText.Clear();
@@ -625,15 +658,9 @@ public partial class MainWindow : Window
         // Saving changes the size and date in the Properties window.
         document.StateChanged += () => { UpdateTab(document); UpdateChrome(); if (document == Current && !document.IsDirty) ShowFileProperties(); };
         document.CaretMoved += UpdatePosition;
-        document.Editor.TextArea.PreviewMouseDown += (_, _) => { };
-        document.Editor.MouseHover += (_, e) =>
-        {
-            var position = document.Editor.GetPositionFromPoint(e.GetPosition(document.Editor));
-            if (position == null) return;
-            var message = document.DiagnosticAt(document.Editor.Document.GetOffset(position.Value.Location));
-            if (message != null) document.Editor.ToolTip = new ToolTip { Content = message, IsOpen = true };
-        };
-        document.Editor.MouseHoverStopped += (_, _) => { if (document.Editor.ToolTip is ToolTip tip) tip.IsOpen = false; document.Editor.ToolTip = null; };
+        // Quick Info on hover (with the problem there), completion, Ctrl+Click and live errors.
+        intelliSense.Attach(document);
+        document.Saved += UpdateChrome;
         UpdateTab(document);
         document.SetDiagnostics(DiagnosticsFor(document));
         if (document.Path != null && settings.Bookmarks.TryGetValue(document.Path, out var saved)) document.SetBookmarks(saved);
@@ -786,6 +813,7 @@ public partial class MainWindow : Window
     private void RemoveDocument(EditorDocument document)
     {
         StoreBookmarks(document);
+        intelliSense.Detach(document);
         var index = documents.IndexOf(document);
         documents.Remove(document);
         document.Detach();
@@ -1382,17 +1410,25 @@ public partial class MainWindow : Window
     private void RefreshDiagnostics()
     {
         var folder = runFolder ?? workspace ?? "";
-        ErrorList.ItemsSource = diagnostics.Select(d => new ErrorRow(d, SafeFullPath(d, folder))).ToList();
-        var errors = diagnostics.Count(d => d.Severity == Severity.Error);
-        var warnings = diagnostics.Count - errors;
-        ErrorsTab.Header = diagnostics.Count == 0 ? "Error List" : $"Error List  ({errors} errors, {warnings} warnings)";
+        // The last build's problems, then IntelliSense's (live) ones that the build didn't also report.
+        var rows = diagnostics.Select(d => new ErrorRow(d, SafeFullPath(d, folder))).ToList();
+        rows.AddRange(intelliSense.LiveDiagnostics
+            .Where(live => !rows.Any(row => row.Line == live.Line && row.Message == live.Message && SamePath(row.FullPath, live.File)))
+            .Select(live => new ErrorRow(live, live.File)));
+        ErrorList.ItemsSource = rows;
+        var errors = rows.Count(r => r.Diagnostic.Severity == Severity.Error);
+        var warnings = rows.Count - errors;
+        ErrorsTab.Header = rows.Count == 0 ? "Error List" : $"Error List  ({errors} errors, {warnings} warnings)";
         foreach (var document in documents) document.SetDiagnostics(DiagnosticsFor(document));
     }
 
     private IEnumerable<Diagnostic> DiagnosticsFor(EditorDocument document)
     {
         var folder = runFolder ?? workspace ?? "";
-        return document.Path == null ? [] : diagnostics.Where(d => SamePath(SafeFullPath(d, folder), document.Path));
+        if (document.Path == null) return [];
+        // A file with a language server shows its live errors: the build's positions go stale as soon as it's edited.
+        if (intelliSense.HasServer(document)) return intelliSense.LiveDiagnostics.Where(d => SamePath(d.File, document.Path));
+        return diagnostics.Where(d => SamePath(SafeFullPath(d, folder), document.Path));
     }
 
     private static string SafeFullPath(Diagnostic diagnostic, string folder)
@@ -1808,7 +1844,8 @@ public partial class MainWindow : Window
         StartButton.IsEnabled = (!runner.IsRunning && debugSession == null) || debugSession?.State == DebugState.Paused;
         StopButton.IsEnabled = runner.IsRunning || debugSession != null;
         StatusBar.Background = runner.IsRunning || debugSession != null ? Themes.Brush("#C2410C") : workspace == null ? Themes.Brush("#475569") : (Brush)Application.Current.Resources["AccentBrush"];
-        StatusLanguage.Text = document?.Language.Name ?? (CurrentDesigner != null ? "Windows Forms Designer" : "");
+        StatusLanguage.Text = document == null ? (CurrentDesigner != null ? "Windows Forms Designer" : "")
+            : document.Language.Name + (intelliSense.ServerName(document) is { } server ? $"  ·  {server}" : "");
         UpdatePosition();
     }
 
@@ -1891,7 +1928,19 @@ public partial class MainWindow : Window
             case "dump":
                 // Status, open tabs and output, for checks in scripts/screenshots.ps1.
                 File.AppendAllText(Environment.GetEnvironmentVariable("CF_REPORT") ?? "report.txt",
-                    $"STATUS: {StatusText.Text}\nTABS: {string.Join(",", documents.Select(d => d.DisplayName))}\nOUTPUT:\n{OutputText.Text}\n");
+                    $"STATUS: {StatusText.Text}\nTABS: {string.Join(",", documents.Select(d => d.DisplayName))}\nOUTPUT:\n{OutputText.Text}\n" +
+                    $"SERVER: {(Current != null ? intelliSense.ServerName(Current) : null)}\n" +
+                    $"ERRORS:\n{string.Join("\n", (ErrorList.ItemsSource as IEnumerable<ErrorRow> ?? Enumerable.Empty<ErrorRow>()).Select(r => $"{r.FileName}:{r.Line}: {r.Message}"))}\n" +
+                    $"FINDRESULTS:\n{string.Join("\n", (FindResults.ItemsSource as IEnumerable<LocationRow> ?? Enumerable.Empty<LocationRow>()).Select(r => $"{Path.GetFileName(r.FullPath)}:{r.Line}"))}\n");
+                break;
+            case "complete": intelliSense.Complete(Current); break;
+            case "definition": intelliSense.GoToDefinition(Current); break;
+            case "references": intelliSense.FindAllReferences(Current); break;
+            case "quickinfo": intelliSense.ShowQuickInfo(Current); break;
+            case var a when a.StartsWith("caret:") && Current is { } at:
+                // caret:text puts the caret just after the first "text" in the file.
+                var found = at.Editor.Text.IndexOf(a[6..], StringComparison.Ordinal);
+                if (found >= 0) { at.Editor.CaretOffset = found + a.Length - 6; at.Editor.TextArea.Focus(); }
                 break;
             case var a when a.StartsWith("open:"): OpenPath(a[5..]); break;
             case "togglebookmark": ToggleBookmark(); break;

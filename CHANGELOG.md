@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0
+
+**IntelliSense**, like Visual Studio's and the Mac version's, from language servers. By Ahmed Al-Bazzaz.
+
+- **Completion lists** open as you type a name or a `.`, and with Ctrl+Space or Ctrl+J. Tab, Enter, `.` or `(` accept the
+  selected name; snippets are in the list too.
+- **Quick Info**: hover over a name (or press Ctrl+Shift+I) to see its type and documentation, with the error there if
+  there is one.
+- **Go To Definition** (F12, or Ctrl+Click) and **Find All References** (Shift+F12, into Find Results).
+- **Live errors**: red and yellow squiggles and Error List entries as you type, before you build.
+- The servers: clangd (C, C++), Pyright or Jedi (Python), TypeScript 7 (JavaScript, TypeScript), csharp-ls (C#),
+  FsAutoComplete (F#), gopls (Go), rust-analyzer (Rust), Eclipse JDT LS (Java) and SourceKit-LSP (Swift). CodeForge
+  installs Pyright, Jedi, TypeScript, csharp-ls and FsAutoComplete into its own folder when you choose Edit ▸
+  IntelliSense ▸ Install Language Server (it asks first); the others are found where their installers put them.
+- Without a server (VB.NET, and languages whose server isn't installed), completion offers the language's keywords,
+  snippets and the file's words, F12 finds declarations in the project, and Shift+F12 lists every use outside strings
+  and comments. The status bar shows which server a file uses.
+- The debugger says "[Program finished]" when a program ends without an exit code, and shows the Output at the end.
+
 ## 0.4.0
 
 **A debugger**, like Visual Studio's, for C#, VB.NET, F# and Python. By Ahmed Al-Bazzaz.

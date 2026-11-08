@@ -6,7 +6,9 @@ public enum Severity { Error, Warning }
 
 /// <summary>An error or warning found in a tool's output, for the Error List.</summary>
 /// <param name="File">The path as the tool printed it (absolute, or relative to the folder it ran in).</param>
-public sealed record Diagnostic(Severity Severity, string Message, string File, int Line, int? Column = null, string? Code = null)
+/// <param name="EndLine">Where the problem ends, when a language server said (build output doesn't).</param>
+public sealed record Diagnostic(Severity Severity, string Message, string File, int Line, int? Column = null, string? Code = null,
+    int? EndLine = null, int? EndColumn = null)
 {
     public string FullPath(string folder) =>
         Path.GetFullPath(Path.IsPathRooted(File) ? File : Path.Combine(folder, File));
