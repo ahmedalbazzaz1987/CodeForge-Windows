@@ -190,3 +190,40 @@ public static class GitCommand
 
     public static Task<GitResult> RunAsync(string folder, params string[] arguments) => Task.Run(() => Run(folder, arguments));
 }
+
+public static class GitIdentity
+{
+    /// <summary>Git's answer when no user.name or user.email is set.</summary>
+    public static bool IsMissing(string message) =>
+        message.Contains("Author identity unknown") || message.Contains("Please tell me who you are") || message.Contains("unable to auto-detect email address");
+
+    /// <summary>What a new repository leaves out: build output, editor folders and packages, for the languages CodeForge runs.</summary>
+    public const string DefaultIgnore = """
+        # Build output
+        bin/
+        obj/
+        out/
+        build/
+        dist/
+        target/
+        *.exe
+        *.o
+        *.obj
+        *.pdb
+
+        # Editors
+        .vs/
+        .vscode/
+        *.user
+        *.suo
+
+        # Packages and environments
+        node_modules/
+        packages/
+        __pycache__/
+        *.pyc
+        .venv/
+        venv/
+        """;
+}
+

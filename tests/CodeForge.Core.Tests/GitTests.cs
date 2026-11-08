@@ -59,4 +59,13 @@ public class GitTests
             Directory.Delete(Path.GetDirectoryName(folder)!, true);
         }
     }
+
+    [Fact]
+    public void RecognisesAMissingIdentity()
+    {
+        Assert.True(GitIdentity.IsMissing("Author identity unknown\n\n*** Please tell me who you are."));
+        Assert.False(GitIdentity.IsMissing("nothing to commit"));
+        Assert.Contains("bin/", GitIdentity.DefaultIgnore);
+    }
 }
+

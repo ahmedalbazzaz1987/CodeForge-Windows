@@ -245,9 +245,16 @@ public sealed class IntelliSense
     private void TextEntered(EditorDocument document, string text)
     {
         CloseHover();
-        if (completion != null || text.Length != 1 || document.IsReadOnly) return;
+        if (text.Length != 1 || document.IsReadOnly) return;
         var typed = text[0];
         var triggers = sessions.TryGetValue(document, out var session) ? session.Client.TriggerCharacters : new HashSet<string> { "." };
+        // Typed fast ("g."), the list for the word can still be open when the dot comes: the dot's list replaces it.
+        if (completion != null)
+        {
+            if (!triggers.Contains(text)) return;
+            completion.Close();
+            completion = null;
+        }
         var caret = document.Editor.CaretOffset;
         var start = BasicIntelliSense.WordStart(document.Editor.Text, caret);
         // A trigger character (. :: -> …), or the first letter of a new word.

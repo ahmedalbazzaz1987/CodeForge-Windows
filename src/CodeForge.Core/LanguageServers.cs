@@ -478,8 +478,8 @@ public sealed class LanguageClient(Action<Action> post)
               "general": { "positionEncodings": ["utf-16"] },
               "textDocument": {
                 "synchronization": { "didSave": true, "dynamicRegistration": false },
-                "completion": { "completionItem": { "snippetSupport": false, "documentationFormat": ["plaintext", "markdown"] } },
-                "hover": { "contentFormat": ["plaintext", "markdown"] },
+                "completion": { "completionItem": { "snippetSupport": false, "documentationFormat": ["markdown", "plaintext"] } },
+                "hover": { "contentFormat": ["markdown", "plaintext"] },
                 "definition": { "linkSupport": true },
                 "references": {},
                 "rename": { "prepareSupport": false },

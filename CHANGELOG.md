@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.1
+
+Fixes from testing 0.6.0 on Windows.
+
+- **First commit on a PC**: when Git doesn't know who's committing, CodeForge asks for your name and email (saved with
+  `git config --global`) and commits, instead of showing Git's error.
+- **Create Git Repository** adds a .gitignore for build output (bin, obj, node_modules, __pycache__…), as Visual Studio does.
+- **TypeScript Quick Info** keeps the signature and the documentation on separate lines (CodeForge now asks servers for
+  Markdown first).
+- Typing **`g.`** quickly opens the member list (the dot used to be lost while the list for `g` was still opening).
+
 ## 0.6.0
 
 **Git Changes and refactoring**, like Visual Studio's and the Mac version's.

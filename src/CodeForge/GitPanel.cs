@@ -236,12 +236,31 @@ public sealed class GitPanel : DockPanel
             Status(success ?? "Ready");
             then?.Invoke();
         }
+        else if (GitIdentity.IsMissing(result.Message))
+        {
+            // A first commit on this PC: ask who's committing, as Visual Studio does, then try again.
+            Status("Git needs your name and email");
+            if (AskIdentity(folder)) { Git(arguments, success, then); return; }
+        }
         else
         {
             Status($"git {arguments[0]} failed");
             MessageBox.Show(Owner(), result.Message, $"git {arguments[0]} failed", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         Refresh();
+    }
+
+    /// <summary>Asks for the name and email Git records with commits, and saves them for every repository.</summary>
+    private bool AskIdentity(string folder)
+    {
+        var name = Prompt.Ask(Owner(), "Your name for Git",
+            "Git records a name and an email address with each commit. They're saved for every repository on this PC (git config --global). Your name:",
+            Environment.UserName)?.Trim();
+        if (string.IsNullOrEmpty(name)) return false;
+        var email = Prompt.Ask(Owner(), "Your email for Git", "Your email address (the one your GitHub account uses, if you have one):", "")?.Trim();
+        if (string.IsNullOrEmpty(email)) return false;
+        return GitCommand.Run(folder, "config", "--global", "user.name", name).Succeeded &&
+               GitCommand.Run(folder, "config", "--global", "user.email", email).Succeeded;
     }
 
     private void ToggleStage(GitChange change)
@@ -298,7 +317,13 @@ public sealed class GitPanel : DockPanel
         Git(["switch", chosen], $"Switched to {chosen}");
     }
 
-    public void CreateRepository() => Git(["init"], "Created a Git repository");
+    /// <summary>git init, with a .gitignore for build output (bin, obj, node_modules…) as Visual Studio adds.</summary>
+    public void CreateRepository() => Git(["init"], "Created a Git repository", () =>
+    {
+        if (Folder() is not { } folder) return;
+        var ignore = Path.Combine(folder, ".gitignore");
+        if (!File.Exists(ignore)) File.WriteAllText(ignore, GitIdentity.DefaultIgnore);
+    });
 
     private async void ShowDiff(GitChange change)
     {
