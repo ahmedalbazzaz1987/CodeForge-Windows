@@ -58,6 +58,14 @@ public sealed record DebugConfiguration(string Adapter, string[] AdapterArgument
     public Dictionary<string, string> Environment { get; init; } = [];
     /// <summary>Delve speaks the protocol over TCP: it prints "DAP server listening at: host:port" first.</summary>
     public bool UsesSocket { get; init; }
+    /// <summary>The kinds of files whose breakpoints the adapter understands (null: all), so GDB isn't sent C# files.</summary>
+    public HashSet<string>? SourceExtensions { get; init; }
+    /// <summary>
+    /// GDB on Windows misreads paths with non-ASCII letters (an Arabic "Documents" folder): breakpoints then go by file
+    /// name, and frames are matched back to the files in <see cref="SourceFolder"/>.
+    /// </summary>
+    public bool BreakpointsByName { get; init; }
+    public string? SourceFolder { get; init; }
 }
 
 /// <summary>A frame of the call stack where the program is stopped.</summary>
@@ -384,19 +392,33 @@ public sealed class DebugSession
         {
             var list = response["body"]?["stackFrames"] as JsonArray ?? [];
             Frames = list.OfType<JsonObject>().Select(frame => new StackFrameInfo(
-                frame["id"]?.GetValue<int>() ?? 0, (string?)frame["name"] ?? "?", (string?)frame["source"]?["path"],
+                frame["id"]?.GetValue<int>() ?? 0, (string?)frame["name"] ?? "?", SourceFile((string?)frame["source"]?["path"]),
                 frame["line"]?.GetValue<int>() ?? 0)).ToList();
             SetState(DebugState.Paused);
             Stopped?.Invoke();
         });
     }
 
+    /// <summary>A frame's file as the adapter names it, or the project's file with that name when the path doesn't exist.</summary>
+    private string? SourceFile(string? path)
+    {
+        if (path == null || File.Exists(path) || Configuration.SourceFolder is not { } folder) return path;
+        var name = Path.GetFileName(path.Replace('/', '\\'));
+        try
+        {
+            return Directory.EnumerateFiles(folder, name, new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 4 }).FirstOrDefault() ?? path;
+        }
+        catch (Exception) { return path; }
+    }
+
     public void SendBreakpoints(string file, IEnumerable<int> lines)
     {
         if (State == DebugState.Ended) return;
+        if (Configuration.SourceExtensions is { } kinds && !kinds.Contains(Path.GetExtension(file).ToLowerInvariant())) return;
+        var path = Configuration.BreakpointsByName && file.Any(c => c > 127) ? Path.GetFileName(file) : file;
         adapter.Request("setBreakpoints", new JsonObject
         {
-            ["source"] = new JsonObject { ["path"] = file, ["name"] = Path.GetFileName(file) },
+            ["source"] = new JsonObject { ["path"] = path, ["name"] = Path.GetFileName(file) },
             ["breakpoints"] = new JsonArray(lines.Order().Select(line => (JsonNode)new JsonObject { ["line"] = line }).ToArray()),
         });
     }
@@ -545,14 +567,21 @@ public static class DebugTools
         {
             ["type"] = "lldb-dap", ["request"] = "launch", ["program"] = program, ["args"] = new JsonArray(), ["cwd"] = folder,
             ["stopOnEntry"] = false,
-        });
+        })
+        { SourceExtensions = NativeSources, SourceFolder = folder };
+
+    /// <summary>The source files a native debugger can stop in.</summary>
+    public static readonly HashSet<string> NativeSources = [".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".rs", ".swift", ".m", ".mm"];
 
     /// <summary>A program built with GCC (MSYS2's MinGW) under GDB's own adapter (GDB 14 and newer: <c>gdb -i dap</c>).</summary>
     public static DebugConfiguration Gdb(string gdb, string program, string folder) =>
         new(gdb, ["-i", "dap", "-q"], "gdb", new JsonObject
         {
-            ["type"] = "gdb", ["request"] = "launch", ["program"] = program, ["args"] = new JsonArray(), ["cwd"] = folder,
-        });
+            // GDB can't open folders with non-ASCII names: their short (8.3) names have none.
+            ["type"] = "gdb", ["request"] = "launch", ["program"] = NativeDebugging.ShortPath(program), ["args"] = new JsonArray(),
+            ["cwd"] = NativeDebugging.ShortPath(folder),
+        })
+        { SourceExtensions = NativeSources, BreakpointsByName = true, SourceFolder = folder };
 
     /// <summary>A Go program under Delve, which shows Go's variables. CodeForge builds the program; Delve runs it.</summary>
     public static DebugConfiguration Delve(string dlv, string program, string folder) =>
@@ -561,7 +590,7 @@ public static class DebugTools
             ["type"] = "go", ["request"] = "launch", ["mode"] = "exec", ["program"] = program, ["cwd"] = folder,
             ["stopOnEntry"] = false, ["outputMode"] = "remote",
         })
-        { UsesSocket = true };
+        { UsesSocket = true, SourceExtensions = [".go"], SourceFolder = folder };
 }
 
 /// <summary>How to build a compiled program with debug information, and where the program ends up.</summary>
@@ -659,6 +688,18 @@ public static class NativeDebugging
         };
         return places.FirstOrDefault(File.Exists);
     }
+
+    /// <summary>A path's short (8.3) form on Windows when it has non-ASCII letters, if the volume keeps short names.</summary>
+    public static string ShortPath(string path)
+    {
+        if (!OperatingSystem.IsWindows() || path.All(c => c < 128)) return path;
+        var buffer = new StringBuilder(1024);
+        var length = GetShortPathName(path, buffer, buffer.Capacity);
+        return length > 0 && length < buffer.Capacity ? buffer.ToString() : path;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, EntryPoint = "GetShortPathNameW")]
+    private static extern uint GetShortPathName(string longPath, StringBuilder shortPath, int bufferLength);
 
     /// <summary>GDB's major version, from <c>gdb --version</c> ("GNU gdb (GDB) 15.2"); 0 if it can't be read.</summary>
     public static int GdbVersion(string gdb)

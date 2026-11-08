@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.1
+
+From testing 0.9.0 on a PC.
+
+- **Debugging C and C++ in folders with Arabic (or other non-ASCII) names**: GDB couldn't open them; CodeForge now
+  hands it the folder's short name and finds the files again by name.
+- The debugger is only sent breakpoints for its own kind of file (GDB no longer lists the C# breakpoints of other
+  projects as pending).
+- A compiler or debugger installed while CodeForge is open (winget, MSYS2, `go install`) is found without restarting.
+- The terminal stays at its last line when the color theme changes.
+
 ## 0.9.0
 
 The rest of the Mac version's features.

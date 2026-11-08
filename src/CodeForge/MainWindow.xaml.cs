@@ -133,6 +133,8 @@ public partial class MainWindow : Window
         RestoreLayout();
         UpdateChrome();
         Themes.Changed += UpdateChrome;
+        // A new theme re-templates the terminal's text box, which scrolls it back to the top.
+        Themes.Changed += () => Dispatcher.BeginInvoke(TerminalText.ScrollToEnd, System.Windows.Threading.DispatcherPriority.Background);
         Closing += (_, e) => { if (!ConfirmCloseAll()) e.Cancel = true; else SaveSession(); };
         Closed += (_, _) => { debugSession?.Stop(); runner.Stop(); terminal.Stop(); intelliSense.StopAll(); };
     }
@@ -1234,6 +1236,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void StartNativeDebugging(NativeDebugBuild build)
     {
+        PathVariable.Refresh();
         var configuration = NativeDebugging.Configuration(build, name => NativeDebugging.Find(name, n => ToolCheck.Find(n)));
         if (configuration == null)
         {
@@ -1587,6 +1590,9 @@ public partial class MainWindow : Window
     private bool ToolIsInstalled(string command)
     {
         if (ToolCheck.Program(command) is not { } program || ToolCheck.IsAvailable(program)) return true;
+        // Installed since CodeForge started (winget, MSYS2…): read PATH again before saying it's missing.
+        PathVariable.Refresh();
+        if (ToolCheck.IsAvailable(program)) return true;
         ShowPanel(OutputTab);
         OutputText.Clear();
         var name = Path.GetFileNameWithoutExtension(program);
