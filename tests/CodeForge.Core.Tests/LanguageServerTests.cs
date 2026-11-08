@@ -201,4 +201,33 @@ public class LanguageServerTests
         var python = "def greet(name):\n    return name\n\nclass Greeter:\n    pass\n";
         Assert.Equal(python.IndexOf("Greeter"), BasicIntelliSense.Declaration(python, "Greeter", Languages.ById("python")));
     }
+
+    [Fact]
+    public void WorkspaceEditsAreReadAndApplied()
+    {
+        var edit = JsonNode.Parse("""
+            { "changes": { "file:///C:/p/a.cs": [
+                { "range": { "start": { "line": 0, "character": 4 }, "end": { "line": 0, "character": 7 } }, "newText": "total" },
+                { "range": { "start": { "line": 1, "character": 0 }, "end": { "line": 1, "character": 3 } }, "newText": "total" } ] },
+              "documentChanges": [ { "textDocument": { "uri": "file:///C:/p/b.cs", "version": 1 },
+                "edits": [ { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "// b\n" } ] } ] }
+            """);
+        var edits = LspResults.WorkspaceEdits(edit);
+        Assert.Equal(2, edits[@"C:\p\a.cs"].Count);
+        Assert.Equal("var total = 1;\ntotal++;", TextEdit.Apply("var sum = 1;\nsum++;", edits[@"C:\p\a.cs"]));
+        Assert.Equal("// b\nx", TextEdit.Apply("x", edits[@"C:\p\b.cs"]));
+    }
+
+    [Fact]
+    public void CodeActionsPutPreferredFixesFirst()
+    {
+        var actions = LspResults.CodeActions(JsonNode.Parse("""
+            [ { "title": "Extract method", "kind": "refactor.extract" },
+              { "title": "Add using System;", "kind": "quickfix", "isPreferred": true, "edit": {} },
+              { "title": "Run thing", "command": "x.run" },
+              { "title": "Can't", "disabled": { "reason": "no" } } ]
+            """));
+        Assert.Equal("Add using System;|Extract method|Run thing", string.Join("|", actions.Select(a => a.Title)));
+    }
 }
+

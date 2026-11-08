@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.0
+
+**Git Changes and refactoring**, like Visual Studio's and the Mac version's.
+
+- **Git Changes**, a tab beside Solution Explorer (Git ▸ Git Changes, Ctrl+Alt+F7, or click the branch in the status
+  bar): staged and unstaged files with + and − to stage them, a commit message (Ctrl+Enter commits), Commit All or
+  Commit Staged, Fetch, Pull and Push, and a branch list to switch branches or create one. Double-click a file to see
+  its changes; right-click to open it or undo its changes. Folders that aren't repositories get Create Git Repository.
+- A **Git menu**: Git Changes, Commit All, Fetch, Pull, Push, New Branch, View Branch History, Blame (Annotate), Create
+  Git Repository and Clone Repository. The status bar shows the branch, commits to push and pull, and changed files.
+- **Rename** (Ctrl+Shift+R): the language server renames a symbol everywhere it's used; without one, every whole-word
+  use in the project's files of that language, outside strings and comments. Changed files stay open, unsaved.
+- **Extract Method** (Ctrl+Shift+M) for VB.NET, C#, Python, JavaScript, TypeScript and Swift: variables from before the
+  selection become parameters, and one set in it and used after becomes the return value.
+- **Quick Actions and Refactorings** (Ctrl+.): the language server's fixes for the line (add a using, fix a typo…),
+  then Rename and Extract Method.
+
 ## 0.5.2
 
 - **Newly installed tools are found right away.** CodeForge reads the saved PATH when it starts and before installing a

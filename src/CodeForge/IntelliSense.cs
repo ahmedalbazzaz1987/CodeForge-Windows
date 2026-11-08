@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -29,6 +30,10 @@ public sealed class IntelliSense
     /// <summary>Runs an install command in the Output window, then the action if it succeeded.</summary>
     public Action<string, string, Action> RunInstall { get; init; } = (_, _, _) => { };
     public Func<Window> Owner { get; init; } = () => Application.Current.MainWindow;
+    /// <summary>Opens a file in a tab (or finds its tab), for edits to files that aren't open.</summary>
+    public Func<string, EditorDocument?> OpenDocument { get; init; } = _ => null;
+    /// <summary>Brings a document's tab to the front.</summary>
+    public Action<EditorDocument> SelectDocument { get; init; } = _ => { };
 
     public LanguageServerLocator Locator { get; } = new(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodeForge", "LanguageServers"));
@@ -128,6 +133,7 @@ public sealed class IntelliSense
             if (list.Count == 0) live.Remove(file); else live[file] = list;
             DiagnosticsChanged();
         };
+        client.EditRequested = edits => Apply(edits, "Edit") > 0 || edits.Count == 0;
         client.Exited += () =>
         {
             foreach (var document in sessions.Where(s => s.Value.Client == client).Select(s => s.Key).ToList()) sessions.Remove(document);
@@ -467,6 +473,158 @@ public sealed class IntelliSense
 
     private static bool SamePath(string? a, string? b) =>
         a != null && b != null && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+
+    // MARK: Refactoring
+
+    /// <summary>
+    /// Rename (Ctrl+Shift+R; Ctrl+R, Ctrl+R in Visual Studio): the language server renames the symbol everywhere it's used; without one,
+    /// every whole-word use in the project's files of this language, outside strings and comments.
+    /// </summary>
+    public void Rename(EditorDocument? document)
+    {
+        if (document == null || document.IsReadOnly) return;
+        if (WordAt(document.Editor.Text, document.Editor.CaretOffset) is not { } word) { Status("Put the caret on a name first"); return; }
+        var hasServer = sessions.TryGetValue(document, out var session);
+        var message = hasServer ? $"Every use of “{word.Text}” that {ServerName(document)} knows about is renamed."
+            : $"Every “{word.Text}” in this project's {document.Language.Name} files is renamed (whole words, not in strings or comments).";
+        if (Prompt.Ask(Owner(), "Rename", message + " Changed files are left open, unsaved, so you can check them.", word.Text)?.Trim() is not { Length: > 0 } newName
+            || newName == word.Text) return;
+        if (!Regex.IsMatch(newName, @"^[\p{L}_][\p{L}\p{N}_]*$")) { Status($"“{newName}” isn't a valid name"); return; }
+        if (session != null)
+        {
+            Flush(document);
+            session.Rename(word.Start, newName, edits =>
+            {
+                if (edits.Count == 0) { Status($"{ServerName(document)} can't rename “{word.Text}”"); return; }
+                var count = Apply(edits, "Rename");
+                SelectDocument(document);
+                Status($"Renamed “{word.Text}” to “{newName}”: {count} change{(count == 1 ? "" : "s")}");
+            });
+            return;
+        }
+        var options = new SearchOptions(MatchCase: !document.Language.CaseInsensitive, WholeWord: true);
+        var expression = FileSearch.Expression(word.Text, options)!;
+        var files = ProjectFiles(document.Language).ToList();
+        if (document.Path != null && !files.Any(f => SamePath(f, document.Path))) files.Insert(0, document.Path);
+        var changes = 0;
+        foreach (var file in document.Path == null ? Enumerable.Empty<string>() : files)
+        {
+            var open = Documents().FirstOrDefault(d => SamePath(d.Path, file));
+            if ((open?.Editor.Text ?? FileSearch.ReadText(file)) is not { } text) continue;
+            var matches = expression.Matches(text).Where(m => !BasicIntelliSense.InStringOrComment(text, m.Index, document.Language)).ToList();
+            if (matches.Count == 0) continue;
+            var target = open ?? OpenDocument(file);
+            if (target == null) continue;
+            ReplaceAll(target, matches.Select(m => (m.Index, m.Length, newName)));
+            changes += matches.Count;
+        }
+        if (document.Path == null) ReplaceAll(document, expression.Matches(document.Editor.Text).Select(m => (m.Index, m.Length, newName)));
+        SelectDocument(document);
+        Status($"Renamed “{word.Text}” to “{newName}”: {changes} change{(changes == 1 ? "" : "s")}");
+    }
+
+    /// <summary>Extract Method (Ctrl+Shift+M; Ctrl+R, Ctrl+M in Visual Studio) on the selected lines, then Rename on the new method.</summary>
+    public void ExtractMethodFromSelection(EditorDocument? document)
+    {
+        if (document == null || document.IsReadOnly) return;
+        var editor = document.Editor;
+        try
+        {
+            var result = CodeForge.Core.ExtractMethod.Extract(editor.Text, editor.SelectionStart, editor.SelectionLength, document.Language.Id);
+            // One change, so one Undo puts it back. AvalonEdit keeps \r\n files' line endings when given \n.
+            var newText = editor.Text.Contains("\r\n") ? result.Text.Replace("\n", "\r\n") : result.Text;
+            var nameStart = editor.Text.Contains("\r\n") ? result.Text[..result.NameStart].Count(c => c == '\n') + result.NameStart : result.NameStart;
+            editor.Document.Replace(0, editor.Document.TextLength, newText);
+            editor.Select(nameStart, result.NameLength);
+            editor.ScrollTo(editor.Document.GetLineByOffset(nameStart).LineNumber, 0);
+            Status("Extracted the method: rename it with Ctrl+Shift+R");
+        }
+        catch (CodeForge.Core.ExtractMethod.Failure failure)
+        {
+            MessageBox.Show(Owner(), failure.Message, "Extract Method", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+    /// <summary>Quick Actions and Refactorings (Ctrl+.): the server's fixes for the line, then CodeForge's own refactorings.</summary>
+    public void ShowQuickActions(EditorDocument? document)
+    {
+        if (document == null) return;
+        var editor = document.Editor;
+        var menu = new ContextMenu { PlacementTarget = editor.TextArea.TextView, Placement = System.Windows.Controls.Primitives.PlacementMode.Relative };
+        var caret = editor.TextArea.Caret.CalculateCaretRectangle();
+        menu.HorizontalOffset = caret.Left - editor.TextArea.TextView.ScrollOffset.X;
+        menu.VerticalOffset = caret.Bottom - editor.TextArea.TextView.ScrollOffset.Y + 2;
+        void Show(List<CodeAction> actions)
+        {
+            foreach (var action in actions.Take(20))
+            {
+                var item = new MenuItem { Header = action.Title, FontWeight = action.IsPreferred ? FontWeights.SemiBold : FontWeights.Normal };
+                item.Click += (_, _) =>
+                {
+                    if (sessions.TryGetValue(document, out var current)) current.Run(action, edits => Apply(edits, action.Title) >= 0);
+                };
+                menu.Items.Add(item);
+            }
+            if (menu.Items.Count > 0) menu.Items.Add(new Separator());
+            var rename = new MenuItem { Header = "Rename…", InputGestureText = "Ctrl+Shift+R" };
+            rename.Click += (_, _) => Rename(document);
+            menu.Items.Add(rename);
+            if (CodeForge.Core.ExtractMethod.Supports(document.Language.Id))
+            {
+                var extract = new MenuItem { Header = "Extract Method", InputGestureText = "Ctrl+Shift+M", IsEnabled = editor.SelectionLength > 0 };
+                extract.Click += (_, _) => ExtractMethodFromSelection(document);
+                menu.Items.Add(extract);
+            }
+            menu.IsOpen = true;
+        }
+        if (sessions.TryGetValue(document, out var session))
+        {
+            Flush(document);
+            var start = editor.SelectionLength > 0 ? editor.SelectionStart : editor.CaretOffset;
+            session.CodeActions(start, start + editor.SelectionLength, Show);
+        }
+        else
+        {
+            Show([]);
+        }
+    }
+
+    /// <summary>Makes a WorkspaceEdit's changes in tabs (opening files that aren't open); returns how many edits it made.</summary>
+    private int Apply(Dictionary<string, List<TextEdit>> edits, string what)
+    {
+        var count = 0;
+        foreach (var (path, list) in edits)
+        {
+            if (list.Count == 0) continue;
+            var document = Documents().FirstOrDefault(d => SamePath(d.Path, path)) ?? OpenDocument(path);
+            if (document == null) continue;
+            var lines = new TextLines(document.Editor.Text);
+            ReplaceAll(document, list.Select(e =>
+            {
+                var start = lines.Offset(e.StartLine, e.StartCharacter);
+                return (start, Math.Max(lines.Offset(e.EndLine, e.EndCharacter) - start, 0), e.NewText);
+            }));
+            count += list.Count;
+        }
+        if (count > 0) Status($"{what}: {count} change{(count == 1 ? "" : "s")}");
+        return count;
+    }
+
+    /// <summary>Replaces ranges in one Undo step, last first so earlier offsets stay right.</summary>
+    private static void ReplaceAll(EditorDocument document, IEnumerable<(int Start, int Length, string Text)> replacements)
+    {
+        var editor = document.Editor.Document;
+        editor.BeginUpdate();
+        try
+        {
+            foreach (var (start, length, text) in replacements.OrderByDescending(r => r.Start))
+                editor.Replace(Math.Min(start, editor.TextLength), Math.Min(length, Math.Max(editor.TextLength - start, 0)), text);
+        }
+        finally
+        {
+            editor.EndUpdate();
+        }
+    }
 }
 
 /// <summary>A row in the completion list: a colored badge for the kind, the name, and its detail on the right.</summary>

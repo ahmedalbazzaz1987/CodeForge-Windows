@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     private readonly record struct Place(string Path, int Line);
     private List<Diagnostic> diagnostics = [];
     private readonly IntelliSense intelliSense;
+    private readonly GitPanel gitPanel;
 
     public string? Workspace => workspace;
     public EditorDocument? Current => (DocumentTabs.SelectedItem as TabItem)?.Tag as EditorDocument;
@@ -61,7 +62,36 @@ public partial class MainWindow : Window
                 RunCommand(command, folder, "Installing IntelliSense…");
             },
             Owner = () => this,
+            OpenDocument = path =>
+            {
+                var showing = Current;
+                OpenPath(path);
+                var opened = documents.FirstOrDefault(d => SamePath(d.Path, path));
+                if (showing != null && showing != opened) Select(showing);
+                return opened;
+            },
+            SelectDocument = Select,
         };
+        gitPanel = new GitPanel
+        {
+            Folder = () => workspace,
+            OpenFile = path => OpenPath(path),
+            ShowText = ShowText,
+            Status = text => StatusText.Text = text,
+            StatusChanged = status =>
+            {
+                StatusBranch.Text = status == null ? "" : $"⎇ {status.Branch}" +
+                    (status.Ahead > 0 ? $"  ↑{status.Ahead}" : "") + (status.Behind > 0 ? $"  ↓{status.Behind}" : "") +
+                    (status.Changes.Count > 0 ? $"  ✎{status.Changes.Count}" : "");
+            },
+            Owner = () => this,
+        };
+        GitTab.Content = gitPanel;
+        SideTabs.SelectionChanged += (_, e) => { if (e.Source == SideTabs && SideTabs.SelectedItem == GitTab) gitPanel.Refresh(); };
+        StatusBranch.Cursor = Cursors.Hand;
+        StatusBranch.ToolTip = "Git Changes";
+        StatusBranch.MouseLeftButtonUp += (_, _) => ShowGitChanges();
+        Activated += (_, _) => { if (workspace != null) gitPanel.Refresh(); };
         PropertiesHost.Child = properties;
         BuildMenu();
         WireControls();
@@ -131,6 +161,11 @@ public partial class MainWindow : Window
             Item("Go To _Definition", () => intelliSense.GoToDefinition(Current), "F12", HasDocument),
             Item("Find All _References", () => intelliSense.FindAllReferences(Current), "Shift+F12", HasDocument),
             Line(),
+            SubMenu("Refac_tor",
+                Item("Quick Actions and Refactorings…", () => intelliSense.ShowQuickActions(Current), "Ctrl+OemPeriod", HasDocument),
+                Item("_Rename…", () => intelliSense.Rename(Current), "Ctrl+Shift+R", () => Current is { IsReadOnly: false }),
+                Item("Extract _Method", () => intelliSense.ExtractMethodFromSelection(Current), "Ctrl+Shift+M",
+                    () => Current is { IsReadOnly: false } d && ExtractMethod.Supports(d.Language.Id))),
             SubMenu("_IntelliSense",
                 Item("_List Members", () => intelliSense.Complete(Current), "Ctrl+J", HasDocument),
                 Item("Complete _Word", () => intelliSense.Complete(Current), "Ctrl+Space", HasDocument),
@@ -169,6 +204,21 @@ public partial class MainWindow : Window
             Item("Zoom _In", () => SetFontSize(settings.FontSize + 1), "Ctrl+Shift+OemPeriod"),
             Item("Zoom O_ut", () => SetFontSize(settings.FontSize - 1), "Ctrl+Shift+OemComma"),
             Item("Reset Zoom", () => SetFontSize(14), "Ctrl+D0"));
+
+        Menu("_Git",
+            Item("Git _Changes", ShowGitChanges, "Ctrl+Alt+F7"),
+            Item("_Commit All", () => { ShowGitChanges(); gitPanel.Commit(); }, "", () => gitPanel.Current != null),
+            Line(),
+            Item("_Fetch", gitPanel.Fetch, "", () => gitPanel.Current != null),
+            Item("_Pull", gitPanel.Pull, "", () => gitPanel.Current != null),
+            Item("P_ush", gitPanel.Push, "", () => gitPanel.Current != null),
+            Line(),
+            Item("_New Branch…", gitPanel.CreateBranch, "", () => gitPanel.Current != null),
+            Item("View Branch _History", gitPanel.ShowHistory, "", () => gitPanel.Current != null),
+            Item("_Blame (Annotate)", () => { if (Current?.Path is { } p) gitPanel.ShowBlame(p); }, "", () => gitPanel.Current != null && Current?.Path != null),
+            Line(),
+            Item("Create Git _Repository", gitPanel.CreateRepository, "", () => HasFolder() && gitPanel.Current == null),
+            Item("Clone Re_pository…", CloneRepository));
 
         Menu("_Project",
             Item("Add New _Item…", AddNewItem, "Ctrl+Shift+A", HasFolder),
@@ -661,6 +711,7 @@ public partial class MainWindow : Window
         // Quick Info on hover (with the problem there), completion, Ctrl+Click and live errors.
         intelliSense.Attach(document);
         document.Saved += UpdateChrome;
+        document.Saved += gitPanel.Refresh;
         UpdateTab(document);
         document.SetDiagnostics(DiagnosticsFor(document));
         if (document.Path != null && settings.Bookmarks.TryGetValue(document.Path, out var saved)) document.SetBookmarks(saved);
@@ -1858,21 +1909,25 @@ public partial class MainWindow : Window
 
     private void UpdateBranch()
     {
-        StatusBranch.Text = "";
-        if (workspace == null) return;
-        var folder = workspace;
-        Task.Run(() =>
-        {
-            try
-            {
-                var info = new ProcessStartInfo("git", "branch --show-current") { WorkingDirectory = folder, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
-                using var git = Process.Start(info);
-                var branch = git?.StandardOutput.ReadToEnd().Trim();
-                git?.WaitForExit(3000);
-                if (!string.IsNullOrEmpty(branch) && git?.ExitCode == 0) Dispatcher.Invoke(() => { if (workspace == folder) StatusBranch.Text = " " + branch; });
-            }
-            catch (Exception) { }   // no Git, or not a repository
-        });
+        gitPanel.Refresh();
+    }
+
+    public void ShowGitChanges()
+    {
+        if (ExplorerPane.Visibility != Visibility.Visible) SetPane(ExplorerPane, true);
+        SideTabs.SelectedItem = GitTab;
+        gitPanel.Refresh();
+    }
+
+    /// <summary>Text to read, not a file: a diff or the branch history, in a read-only tab.</summary>
+    public void ShowText(string title, string text, string languageId)
+    {
+        var document = new EditorDocument(null, text, title);
+        document.SetLanguage(Languages.ById(languageId));
+        document.Editor.IsReadOnly = true;
+        document.Editor.IsModified = false;
+        AddDocument(document);
+        Select(document);
     }
 
     // MARK: Helpers
@@ -1932,6 +1987,22 @@ public partial class MainWindow : Window
                     $"SERVER: {(Current != null ? intelliSense.ServerName(Current) : null)}\n" +
                     $"ERRORS:\n{string.Join("\n", (ErrorList.ItemsSource as IEnumerable<ErrorRow> ?? Enumerable.Empty<ErrorRow>()).Select(r => $"{r.FileName}:{r.Line}: {r.Message}"))}\n" +
                     $"FINDRESULTS:\n{string.Join("\n", (FindResults.ItemsSource as IEnumerable<LocationRow> ?? Enumerable.Empty<LocationRow>()).Select(r => $"{Path.GetFileName(r.FullPath)}:{r.Line}"))}\n");
+                break;
+            case "text":
+                File.AppendAllText(Environment.GetEnvironmentVariable("CF_REPORT") ?? "report.txt", $"TEXT:\n{Current?.Editor.Text}\nEND\n");
+                break;
+            case "rename": intelliSense.Rename(Current); break;
+            case "extract": intelliSense.ExtractMethodFromSelection(Current); break;
+            case "quickactions": intelliSense.ShowQuickActions(Current); break;
+            case "git": ShowGitChanges(); break;
+            case "commit": gitPanel.Commit(); break;
+            case var a when a.StartsWith("message:"): gitPanel.Message = a[8..]; break;
+            case var a when a.StartsWith("lines:") && Current is { } lined:
+                // lines:5-6 selects whole lines 5 to 6.
+                var range = a[6..].Split('-').Select(int.Parse).ToArray();
+                var from = lined.Editor.Document.GetLineByNumber(range[0]);
+                var to = lined.Editor.Document.GetLineByNumber(range[^1]);
+                lined.Editor.Select(from.Offset, to.EndOffset - from.Offset);
                 break;
             case "complete": intelliSense.Complete(Current); break;
             case "definition": intelliSense.GoToDefinition(Current); break;

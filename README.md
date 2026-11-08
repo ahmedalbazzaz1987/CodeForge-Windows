@@ -17,6 +17,8 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
 - **IntelliSense**: completion lists, Quick Info, Go To Definition (F12), Find All References (Shift+F12) and live
   errors from language servers (clangd, Pyright/Jedi, TypeScript, csharp-ls, FsAutoComplete, gopls, rust-analyzer,
   JDT LS, SourceKit-LSP), which CodeForge can install for you; keywords, snippets and words for the rest.
+- **Git Changes and refactoring**: stage, commit, fetch, pull, push, branches, history and blame; Rename, Extract
+  Method and Quick Actions (Ctrl+.).
 - **Run and fix**: F5 runs the project or the current file; build errors from VB.NET, C#, gcc, Python and Node.js go to
   the Error List and are underlined in the code.
 - **Many languages**: C#, VB.NET, F#, XAML, Python, JavaScript, TypeScript, C, C++, Java, Kotlin, Go, Rust, Swift,

@@ -345,6 +345,37 @@ public static partial class LspResults
         return diagnostics;
     }
 
+    /// <summary>A WorkspaceEdit's text edits by file, from <c>changes</c> or <c>documentChanges</c>.</summary>
+    public static Dictionary<string, List<TextEdit>> WorkspaceEdits(JsonNode? edit)
+    {
+        var result = new Dictionary<string, List<TextEdit>>(StringComparer.OrdinalIgnoreCase);
+        void Add(string? uri, JsonArray? edits)
+        {
+            if (uri == null || LspUri.ToPath(uri) is not { } path || edits == null) return;
+            if (!result.TryGetValue(path, out var list)) result[path] = list = [];
+            foreach (var item in edits.OfType<JsonObject>())
+            {
+                var range = item["range"];
+                if (Int(range?["start"]?["line"]) is not { } startLine || Int(range?["start"]?["character"]) is not { } startCharacter ||
+                    Int(range?["end"]?["line"]) is not { } endLine || Int(range?["end"]?["character"]) is not { } endCharacter) continue;
+                list.Add(new TextEdit(startLine, startCharacter, endLine, endCharacter, Text(item["newText"]) ?? ""));
+            }
+        }
+        if (edit?["changes"] is JsonObject changes)
+            foreach (var (uri, edits) in changes) Add(uri, edits as JsonArray);
+        foreach (var change in (edit?["documentChanges"] as JsonArray)?.OfType<JsonObject>() ?? [])
+            Add(Text(change["textDocument"]?["uri"]), change["edits"] as JsonArray);
+        return result;
+    }
+
+    /// <summary>Code actions and bare commands, preferred ones first.</summary>
+    public static List<CodeAction> CodeActions(JsonNode? result) =>
+        (result as JsonArray)?.OfType<JsonObject>()
+            .Where(a => Text(a["title"]) is { Length: > 0 } && a["disabled"] == null)
+            .Select(a => new CodeAction(Text(a["title"])!, Text(a["kind"]) ?? "", a["isPreferred"] is JsonValue p && p.TryGetValue<bool>(out var b) && b, a))
+            .OrderByDescending(a => a.IsPreferred).ThenBy(a => a.Kind.StartsWith("quickfix") ? 0 : 1)
+            .ToList() ?? [];
+
     [GeneratedRegex(@"\$\{\d+:([^}]*)\}|\$\{\d+\}|\$\d+")]
     private static partial Regex SnippetField();
 
@@ -367,6 +398,10 @@ public sealed class LanguageClient(Action<Action> post)
     public event Action? Exited;
     /// <summary>The server finished work it announced (indexing the project): answers it gave before may be better now.</summary>
     public event Action? Idle;
+    /// <summary>The server asks for files to be changed (workspace/applyEdit); return whether they were.</summary>
+    public Func<Dictionary<string, List<TextEdit>>, bool>? EditRequested;
+    /// <summary>The diagnostics as the server sent them, by file: code actions are asked for with them.</summary>
+    public Dictionary<string, JsonArray> RawDiagnostics { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public HashSet<string> TriggerCharacters { get; private set; } = ["."];
     public bool PullsDiagnostics { get; private set; }
@@ -447,11 +482,16 @@ public sealed class LanguageClient(Action<Action> post)
                 "hover": { "contentFormat": ["plaintext", "markdown"] },
                 "definition": { "linkSupport": true },
                 "references": {},
+                "rename": { "prepareSupport": false },
+                "codeAction": {
+                  "codeActionLiteralSupport": { "codeActionKind": { "valueSet": ["", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite", "source", "source.organizeImports"] } },
+                  "resolveSupport": { "properties": ["edit"] }, "dataSupport": true
+                },
                 "publishDiagnostics": { "relatedInformation": false },
                 "diagnostic": { "dynamicRegistration": false }
               },
               "window": { "workDoneProgress": true },
-              "workspace": { "workspaceFolders": true, "configuration": true }
+              "workspace": { "workspaceFolders": true, "configuration": true, "applyEdit": true, "workspaceEdit": { "documentChanges": true } }
             }
             """);
         var parameters = new JsonObject
@@ -505,7 +545,11 @@ public sealed class LanguageClient(Action<Action> post)
         if (!PullsDiagnostics) return;
         Request("textDocument/diagnostic", new JsonObject { ["textDocument"] = new JsonObject { ["uri"] = Uri(path) } }, result =>
         {
-            if (result?["items"] is JsonArray items) DiagnosticsPublished?.Invoke(path, LspResults.Diagnostics(items, path));
+            if (result?["items"] is JsonArray items)
+            {
+                RawDiagnostics[path] = (JsonArray)items.DeepClone();
+                DiagnosticsPublished?.Invoke(path, LspResults.Diagnostics(items, path));
+            }
         });
     }
 
@@ -567,13 +611,17 @@ public sealed class LanguageClient(Action<Action> post)
             else if (method == "workspace/workspaceFolders")
                 result = null;
             else if (method == "workspace/applyEdit")
-                result = new JsonObject { ["applied"] = false };
+                // A command the server ran (a code action's) wants files changed.
+                result = new JsonObject { ["applied"] = EditRequested?.Invoke(LspResults.WorkspaceEdits(message["params"]?["edit"])) ?? false };
             Write(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id.DeepClone(), ["result"] = result });
         }
         else if (method == "textDocument/publishDiagnostics" && message["params"] is JsonObject parameters)
         {
             if (parameters["uri"]?.GetValue<string>() is { } uri && LspUri.ToPath(uri) is { } path)
+            {
+                RawDiagnostics[path] = parameters["diagnostics"] as JsonArray ?? [];
                 DiagnosticsPublished?.Invoke(path, LspResults.Diagnostics(parameters["diagnostics"] as JsonArray, path));
+            }
         }
         else if (method == "$/progress" && message["params"] is JsonObject progress)
         {
@@ -658,4 +706,82 @@ public sealed class LanguageDocument
         parameters["context"] = new JsonObject { ["includeDeclaration"] = true };
         Client.Request("textDocument/references", parameters, result => handler(LspResults.Locations(result)));
     }
+
+    /// <summary>The edits, by file, that rename the symbol at an offset (empty if the server can't).</summary>
+    public void Rename(int offset, string newName, Action<Dictionary<string, List<TextEdit>>> handler)
+    {
+        var parameters = At(offset);
+        parameters["newName"] = newName;
+        Client.Request("textDocument/rename", parameters, result => handler(LspResults.WorkspaceEdits(result)));
+    }
+
+    /// <summary>Quick fixes and refactorings for a range, with the server's diagnostics that touch it.</summary>
+    public void CodeActions(int start, int end, Action<List<CodeAction>> handler)
+    {
+        var lines = new TextLines(text());
+        var (startLine, startCharacter) = lines.Position(start);
+        var (endLine, endCharacter) = lines.Position(end);
+        var touching = new JsonArray();
+        foreach (var diagnostic in Client.RawDiagnostics.GetValueOrDefault(Path)?.OfType<JsonObject>() ?? [])
+        {
+            var from = diagnostic["range"]?["start"]?["line"]?.GetValue<int>() ?? -1;
+            var to = diagnostic["range"]?["end"]?["line"]?.GetValue<int>() ?? -1;
+            if (from <= endLine && to >= startLine) touching.Add(diagnostic.DeepClone());
+        }
+        var parameters = new JsonObject
+        {
+            ["textDocument"] = new JsonObject { ["uri"] = Uri },
+            ["range"] = new JsonObject
+            {
+                ["start"] = new JsonObject { ["line"] = startLine, ["character"] = startCharacter },
+                ["end"] = new JsonObject { ["line"] = endLine, ["character"] = endCharacter },
+            },
+            ["context"] = new JsonObject { ["diagnostics"] = touching },
+        };
+        Client.Request("textDocument/codeAction", parameters, result => handler(LspResults.CodeActions(result)));
+    }
+
+    /// <summary>
+    /// Carries out a code action: its edit (asking the server to fill it in first if it left it out), then its command,
+    /// whose edits arrive through <see cref="LanguageClient.EditRequested"/>.
+    /// </summary>
+    public void Run(CodeAction action, Func<Dictionary<string, List<TextEdit>>, bool> apply)
+    {
+        void Finish(JsonObject raw)
+        {
+            if (raw["edit"] != null) apply(LspResults.WorkspaceEdits(raw["edit"]));
+            var command = raw["command"] is JsonObject inner ? inner : raw["command"] is JsonValue ? raw : null;
+            if (command?["command"] is JsonValue name)
+                Client.Request("workspace/executeCommand", new JsonObject
+                {
+                    ["command"] = name.DeepClone(), ["arguments"] = command["arguments"]?.DeepClone() ?? new JsonArray(),
+                }, _ => { });
+        }
+        if (action.Raw["edit"] == null && action.Raw["command"] == null && action.Raw["data"] != null)
+            Client.Request("codeAction/resolve", (JsonObject)action.Raw.DeepClone(), result => Finish(result as JsonObject ?? action.Raw));
+        else
+            Finish(action.Raw);
+    }
 }
+
+/// <summary>A change to a file's text: 0-based LSP positions.</summary>
+public sealed record TextEdit(int StartLine, int StartCharacter, int EndLine, int EndCharacter, string NewText)
+{
+    /// <summary>The text with the edits made, last first so earlier positions stay right.</summary>
+    public static string Apply(string text, IEnumerable<TextEdit> edits)
+    {
+        var lines = new TextLines(text);
+        var builder = new System.Text.StringBuilder(text);
+        foreach (var (edit, start, end) in edits
+                     .Select(e => (e, lines.Offset(e.StartLine, e.StartCharacter), lines.Offset(e.EndLine, e.EndCharacter)))
+                     .OrderByDescending(e => e.Item2).ThenByDescending(e => e.Item3))
+        {
+            builder.Remove(start, Math.Max(end - start, 0));
+            builder.Insert(start, edit.NewText);
+        }
+        return builder.ToString();
+    }
+}
+
+/// <summary>A quick fix or refactoring a language server offers (Ctrl+.).</summary>
+public sealed record CodeAction(string Title, string Kind, bool IsPreferred, JsonObject Raw);

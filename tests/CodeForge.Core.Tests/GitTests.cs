@@ -1,0 +1,62 @@
+using CodeForge.Core;
+
+namespace CodeForge.Core.Tests;
+
+public class GitTests
+{
+    [Fact]
+    public void ParsesBranchCountsAndChanges()
+    {
+        var status = GitStatus.Parse("## main...origin/main [ahead 2, behind 1]\nM  src/a.cs\n M b.cs\nR  old.cs -> new.cs\n?? \"my file.txt\"\nUU conflict.cs\n");
+        Assert.Equal("main", status.Branch);
+        Assert.Equal("origin/main", status.Upstream);
+        Assert.Equal((2, 1), (status.Ahead, status.Behind));
+        Assert.Equal(5, status.Changes.Count);
+        Assert.True(status.Changes[0].IsStaged);
+        Assert.False(status.Changes[1].IsStaged);
+        Assert.Equal("M", status.Changes[1].Letter);
+        Assert.Equal(("new.cs", "old.cs"), (status.Changes[2].Path, status.Changes[2].OriginalPath));
+        Assert.Equal(("my file.txt", "U"), (status.Changes[3].Path, status.Changes[3].Letter));
+        Assert.Equal("!", status.Changes[4].Letter);
+        var fresh = GitStatus.Parse("## No commits yet on main\n?? a.py\n");
+        Assert.Equal("main", fresh.Branch);
+        Assert.Null(fresh.Upstream);
+    }
+
+    [Fact]
+    public void ParsesBlameAndDescribesTimes()
+    {
+        var hash = new string('a', 40);
+        var blame = GitBlame.Parse($"{hash} 1 1 2\nauthor Ahmed\nauthor-time 1700000000\nsummary First\n\tline one\n{hash} 2 2\nauthor Ahmed\nauthor-time 1700000000\nsummary First\n\tline two\n");
+        Assert.Equal(2, blame.Count);
+        Assert.Equal("Ahmed", blame[2].Author);
+        Assert.Equal("First", GitBlame.Latest(blame, 1, 5)!.Summary);
+        var now = DateTimeOffset.FromUnixTimeSeconds(1700000000);
+        Assert.Equal("just now", RelativeTime.Describe(now, now));
+        Assert.Equal("5 minutes ago", RelativeTime.Describe(now.AddMinutes(-5), now));
+        Assert.Equal("yesterday", RelativeTime.Describe(now.AddHours(-30), now));
+        Assert.Equal("3 weeks ago", RelativeTime.Describe(now.AddDays(-21), now));
+    }
+
+    [Fact]
+    public void RunsGitInAFolderWithAnArabicName()
+    {
+        if (GitCommand.Program() == null) return;
+        var folder = Path.Combine(Directory.CreateTempSubdirectory("cf-git").FullName, "مشروع");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            Assert.True(GitCommand.Run(folder, "init", "-b", "main").Succeeded);
+            File.WriteAllText(Path.Combine(folder, "ملف.txt"), "x");
+            var status = GitStatus.Parse(GitCommand.Run(folder, "status", "--porcelain=v1", "--branch", "--untracked-files=all").Output);
+            Assert.Equal("main", status.Branch);
+            Assert.Equal("ملف.txt", status.Changes.Single().Path);
+            Assert.False(GitCommand.Run(folder, "no-such-command").Succeeded);
+        }
+        finally
+        {
+            foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(folder)!, "*", SearchOption.AllDirectories)) File.SetAttributes(file, FileAttributes.Normal);
+            Directory.Delete(Path.GetDirectoryName(folder)!, true);
+        }
+    }
+}
