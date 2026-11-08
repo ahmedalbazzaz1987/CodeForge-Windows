@@ -40,10 +40,12 @@ public sealed class TextLines
 /// <summary>file:// URIs for language servers. Windows paths become <c>file:///C:/…</c>; servers may send the colon as %3A.</summary>
 public static class LspUri
 {
-    public static string FromPath(string path)
+    /// <param name="plain">Leave the path unescaped (<c>file:///C:/My Files/ملف.py</c>), for servers that compare URIs
+    /// without decoding them.</param>
+    public static string FromPath(string path, bool plain = false)
     {
         var parts = path.Replace('\\', '/').Split('/');
-        var encoded = parts.Select((part, i) => i == 0 && Regex.IsMatch(part, "^[A-Za-z]:$") ? part : Uri.EscapeDataString(part));
+        var encoded = parts.Select((part, i) => plain || i == 0 && Regex.IsMatch(part, "^[A-Za-z]:$") ? part : Uri.EscapeDataString(part));
         var joined = string.Join("/", encoded);
         return "file://" + (joined.StartsWith('/') ? "" : "/") + joined;
     }
@@ -60,7 +62,8 @@ public static class LspUri
 }
 
 /// <summary>How a language server is started.</summary>
-public sealed record ServerLaunch(string Executable, IReadOnlyList<string> Arguments, IReadOnlyDictionary<string, string> Environment);
+public sealed record ServerLaunch(string Executable, IReadOnlyList<string> Arguments, IReadOnlyDictionary<string, string> Environment,
+    bool PlainUris = false);
 
 /// <summary>A language server CodeForge knows how to start (and, for some, install).</summary>
 /// <param name="Executables">Program names to look for, in order.</param>
@@ -73,7 +76,7 @@ public sealed record LanguageServerSpec(
     string Id, string Name, string[] Languages, string[] Executables, string InstallHint,
     string[]? Arguments = null, bool InstalledCopyOnly = false,
     string[]? NpmPackages = null, string? DotNetTool = null, string? PipPackage = null, string? PythonStart = null,
-    string? DownloadSize = null)
+    string? DownloadSize = null, bool PlainUris = false)
 {
     public IReadOnlyList<string> Args => Arguments ?? [];
     public bool CanInstall => NpmPackages != null || DotNetTool != null || PipPackage != null;
@@ -95,7 +98,8 @@ public static class LanguageServerSpecs
         // Without Node.js, Python files get Jedi's server, installed with pip like the debugger.
         new("jedi", "Jedi", ["python"], [], "CodeForge can install it for you with pip.",
             PipPackage: "jedi-language-server", PythonStart: "import sys; from jedi_language_server.cli import cli; sys.exit(cli())",
-            DownloadSize: "about 10 MB"),
+            // Jedi stores files by their decoded URI but looks them up undecoded: escaped ones (Arabic, spaces) never get errors.
+            DownloadSize: "about 10 MB", PlainUris: true),
         // TypeScript 7 has a built-in language server for JavaScript and TypeScript.
         new("typescript", "TypeScript", ["javascript", "typescript"], ["tsc"], "CodeForge can install it for you (needs Node.js: winget install OpenJS.NodeJS.LTS).",
             Arguments: ["--lsp", "--stdio"], InstalledCopyOnly: true, NpmPackages: ["typescript@7"], DownloadSize: "about 30 MB"),
@@ -166,14 +170,14 @@ public sealed class LanguageServerLocator(string installFolder, string? path = n
             if (!Directory.Exists(Path.Combine(folder, spec.PipPackage!.Replace('-', '_'))) || Python() is not { } python) return null;
             environment["PYTHONPATH"] = folder;
             environment["PYTHONUTF8"] = "1";
-            return new ServerLaunch(python, ["-c", spec.PythonStart], environment);
+            return new ServerLaunch(python, ["-c", spec.PythonStart], environment, spec.PlainUris);
         }
         // .NET tools built for an older .NET still run on the SDK that's installed.
         if (spec.DotNetTool != null) environment["DOTNET_ROLL_FORWARD"] = "Major";
         var folders = spec.InstalledCopyOnly ? [NodeModulesBin] : SearchFolders().ToArray();
         foreach (var name in spec.Executables)
         {
-            if (FindProgram(name, folders) is { } executable) return new ServerLaunch(executable, spec.Args, environment);
+            if (FindProgram(name, folders) is { } executable) return new ServerLaunch(executable, spec.Args, environment, spec.PlainUris);
         }
         return null;
     }
@@ -365,6 +369,9 @@ public sealed class LanguageClient(Action<Action> post)
     public HashSet<string> TriggerCharacters { get; private set; } = ["."];
     public bool PullsDiagnostics { get; private set; }
     public bool IsRunning { get; private set; }
+    /// <summary>Send file URIs unescaped (see <see cref="LanguageServerSpec.PlainUris"/>).</summary>
+    public bool PlainUris { get; private set; }
+    public string Uri(string path) => LspUri.FromPath(path, PlainUris);
     public bool IsBusy => activeWork.Count > 0;
 
     private Process? process;
@@ -402,6 +409,7 @@ public sealed class LanguageClient(Action<Action> post)
         }
         if (process == null) return false;
         IsRunning = true;
+        PlainUris = launch.PlainUris;
         input = process.StandardInput.BaseStream;
         var output = process.StandardOutput.BaseStream;
         Task.Run(async () =>
@@ -427,7 +435,7 @@ public sealed class LanguageClient(Action<Action> post)
         // The server's log: read so its pipe never fills, but don't show it.
         Task.Run(async () => { try { await process.StandardError.ReadToEndAsync(); } catch (Exception) { } });
 
-        var rootUri = LspUri.FromPath(root);
+        var rootUri = Uri(root);
         var capabilities = JsonNode.Parse("""
             {
               "general": { "positionEncodings": ["utf-16"] },
@@ -492,7 +500,7 @@ public sealed class LanguageClient(Action<Action> post)
     public void PullDiagnostics(string path)
     {
         if (!PullsDiagnostics) return;
-        Request("textDocument/diagnostic", new JsonObject { ["textDocument"] = new JsonObject { ["uri"] = LspUri.FromPath(path) } }, result =>
+        Request("textDocument/diagnostic", new JsonObject { ["textDocument"] = new JsonObject { ["uri"] = Uri(path) } }, result =>
         {
             if (result?["items"] is JsonArray items) DiagnosticsPublished?.Invoke(path, LspResults.Diagnostics(items, path));
         });
@@ -587,7 +595,7 @@ public sealed class LanguageDocument
     public string Path { get; }
     private readonly Func<string> text;
     private int version = 1;
-    private string Uri => LspUri.FromPath(Path);
+    private string Uri => Client.Uri(Path);
 
     public LanguageDocument(LanguageClient client, string path, string languageId, Func<string> text)
     {

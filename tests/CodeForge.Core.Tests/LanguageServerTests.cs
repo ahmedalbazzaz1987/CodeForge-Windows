@@ -29,6 +29,9 @@ public class LanguageServerTests
         // Servers built on vscode-uri send a lowercase drive and an escaped colon.
         Assert.Equal(@"C:\work\main.py", LspUri.ToPath("file:///c%3A/work/main.py"));
         Assert.Null(LspUri.ToPath("untitled:Untitled-1"));
+        // Jedi gets them unescaped.
+        Assert.Equal("file:///C:/Users/أحمد/My Projects/app.py", LspUri.FromPath(@"C:\Users\أحمد\My Projects\app.py", plain: true));
+        Assert.Equal(@"C:\Users\أحمد\My Projects\app.py", LspUri.ToPath("file:///C:/Users/أحمد/My Projects/app.py"));
     }
 
     [Fact]
