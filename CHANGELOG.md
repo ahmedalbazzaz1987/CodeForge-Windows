@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1
+
+Fixes from testing IntelliSense on a PC whose Documents folder has an Arabic name.
+
+- **Python errors as you type** with Jedi in folders whose names have Arabic letters or spaces (Jedi never reported them).
+- **F# IntelliSense** loads the project by itself (FsAutoComplete waited to be told which one).
+- **Quick Info** no longer swallows the next click in the editor, and closes when you type or click.
+- **Go To Definition** and Error List jumps put the caret on the name, not at the start of its line.
+
 ## 0.5.0
 
 **IntelliSense**, like Visual Studio's and the Mac version's, from language servers. By Ahmed Al-Bazzaz.

@@ -58,6 +58,8 @@ public sealed class IntelliSense
     {
         var area = document.Editor.TextArea;
         area.TextEntered += (_, e) => TextEntered(document, e.Text);
+        area.PreviewMouseDown += (_, _) => CloseHover();
+        area.PreviewKeyDown += (_, _) => CloseHover();
         area.TextEntering += (_, e) =>
         {
             // With the list open, . ( ; [ , accept the selected name first, as in Visual Studio; other punctuation closes it.
@@ -332,7 +334,12 @@ public sealed class IntelliSense
                 Text = text.Length > 1500 ? text[..1500] + "…" : text, TextWrapping = TextWrapping.Wrap, MaxWidth = 560,
                 FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12,
             };
-            hoverTip = new ToolTip { Content = content, Placement = System.Windows.Controls.Primitives.PlacementMode.Mouse };
+            // A free-standing tooltip (not the editor's ToolTip property), so it never takes the next click.
+            hoverTip = new ToolTip
+            {
+                Content = content, Placement = System.Windows.Controls.Primitives.PlacementMode.Mouse,
+                PlacementTarget = document.Editor.TextArea.TextView, IsHitTestVisible = false,
+            };
             if (atCaret)
             {
                 var caret = document.Editor.TextArea.Caret.CalculateCaretRectangle();
@@ -342,7 +349,6 @@ public sealed class IntelliSense
                 hoverTip.VerticalOffset = caret.Bottom - document.Editor.TextArea.TextView.ScrollOffset.Y + 2;
                 hoverTip.StaysOpen = false;
             }
-            document.Editor.ToolTip = hoverTip;
             hoverTip.IsOpen = true;
         }
         if (sessions.TryGetValue(document, out var session) && WordAt(document.Editor.Text, at) != null)
@@ -362,7 +368,6 @@ public sealed class IntelliSense
         if (hoverTip == null) return;
         hoverTip.IsOpen = false;
         hoverTip = null;
-        foreach (var document in Documents()) if (document.Editor.ToolTip is ToolTip) document.Editor.ToolTip = null;
     }
 
     // MARK: Navigation
