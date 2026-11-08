@@ -640,6 +640,14 @@ public static class NativeDebugging
     /// <summary>A debugger on PATH, or where its installer puts it (LLVM, Go's bin folder, MSYS2).</summary>
     public static string? Find(string name, Func<string, string?> onPath, string? home = null, string? programFiles = null)
     {
+        // GDB speaks the protocol from version 14: an older one on PATH (an old MinGW) is passed over for MSYS2's.
+        if (name == "gdb")
+        {
+            var candidates = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+                .Select(folder => Path.Combine(folder.Trim('"'), OperatingSystem.IsWindows() ? "gdb.exe" : "gdb"))
+                .Concat([@"C:\msys64\ucrt64\bin\gdb.exe", @"C:\msys64\mingw64\bin\gdb.exe", @"C:\msys64\clang64\bin\gdb.exe"]);
+            return candidates.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => GdbVersion(g) >= 14);
+        }
         if (onPath(name) is { } found) return found;
         home ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         programFiles ??= Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
@@ -647,11 +655,27 @@ public static class NativeDebugging
         {
             "lldb-dap" => [Path.Combine(programFiles, "LLVM", "bin", "lldb-dap.exe")],
             "dlv" => [Path.Combine(home, "go", "bin", "dlv.exe")],
-            "gdb" => [@"C:\msys64\ucrt64\bin\gdb.exe", @"C:\msys64\mingw64\bin\gdb.exe", @"C:\msys64\clang64\bin\gdb.exe"],
             _ => [],
         };
         return places.FirstOrDefault(File.Exists);
     }
+
+    /// <summary>GDB's major version, from <c>gdb --version</c> ("GNU gdb (GDB) 15.2"); 0 if it can't be read.</summary>
+    public static int GdbVersion(string gdb)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo(gdb, "--version") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true });
+            if (process == null) return 0;
+            var output = process.StandardOutput.ReadToEndAsync();
+            if (!process.WaitForExit(5000)) { process.Kill(); return 0; }
+            return ParseGdbVersion(output.Result);
+        }
+        catch (Exception) { return 0; }
+    }
+
+    public static int ParseGdbVersion(string output) =>
+        Regex.Match(output, @"^GNU gdb.*?\s(\d+)\.\d+", RegexOptions.Multiline) is { Success: true } m ? int.Parse(m.Groups[1].Value) : 0;
 
     /// <summary>What to install when no debugger for the language was found.</summary>
     public static string InstallHint(string languageId) => languageId switch

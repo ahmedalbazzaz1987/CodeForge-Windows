@@ -131,6 +131,14 @@ public class DebuggingTests
     }
 
     [Fact]
+    public void ReadsGdbsVersion()
+    {
+        Assert.Equal(15, NativeDebugging.ParseGdbVersion("GNU gdb (GDB) 15.2\nCopyright (C) 2024"));
+        Assert.Equal(12, NativeDebugging.ParseGdbVersion("GNU gdb (GDB for MinGW-W64 x86_64, built by Brecht Sanders) 12.1\n"));
+        Assert.Equal(0, NativeDebugging.ParseGdbVersion("not gdb"));
+    }
+
+    [Fact]
     public void ReadsDelvesAddress()
     {
         Assert.Equal(("127.0.0.1", 52123), DebugAdapter.ListeningAddress("DAP server listening at: 127.0.0.1:52123"));
