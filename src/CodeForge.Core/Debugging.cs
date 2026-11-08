@@ -208,6 +208,7 @@ public sealed class DebugSession
     public int ThreadId { get; private set; }
     public IReadOnlyList<StackFrameInfo> Frames { get; private set; } = [];
     public string StopReason { get; private set; } = "";
+    private bool exitReported;
 
     /// <summary>The breakpoints to send when the adapter is ready: file → lines (1-based).</summary>
     public Func<IReadOnlyDictionary<string, IReadOnlyCollection<int>>> Breakpoints { get; set; } = () => new Dictionary<string, IReadOnlyCollection<int>>();
@@ -280,10 +281,14 @@ public sealed class DebugSession
                 Output?.Invoke(text, category == "stderr" ? DebugOutputKind.Error : isProgram ? DebugOutputKind.Program : DebugOutputKind.Info);
                 break;
             case "exited":
+                exitReported = true;
                 var code = body["exitCode"]?.GetValue<int>() ?? 0;
                 Output?.Invoke($"\n[Program exited with code {ExitCodes.Describe(code)}]\n", code == 0 ? DebugOutputKind.Info : DebugOutputKind.Error);
                 break;
             case "terminated":
+                // netcoredbg on Windows can end without an "exited" event.
+                if (!exitReported) Output?.Invoke("\n[Program finished]\n", DebugOutputKind.Info);
+                exitReported = true;
                 Stop();
                 break;
         }

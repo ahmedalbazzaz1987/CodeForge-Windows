@@ -1206,6 +1206,9 @@ public partial class MainWindow : Window
             EvaluateResult.Text = "";
             DebugBar.Visibility = Visibility.Collapsed;
             StatusText.Text = "Debugging ended";
+            // The program's last lines arrived while the Debug tab was in front; show them.
+            ShowPanel(OutputTab);
+            Dispatcher.BeginInvoke(OutputText.ScrollToEnd, System.Windows.Threading.DispatcherPriority.Background);
         }
         UpdateChrome();
         CommandManager.InvalidateRequerySuggested();
