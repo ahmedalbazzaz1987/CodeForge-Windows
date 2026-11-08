@@ -158,4 +158,12 @@ public class RunSupportTests
         Assert.Equal(("firefox.exe", "https://x"), BrowserCommand.Build("firefox.exe", "https://x"));
         Assert.Null(BrowserCommand.Build("", "https://x"));
     }
+
+    [Fact]
+    public void PathGainsSavedEntriesWithoutDuplicates()
+    {
+        var merged = PathVariable.Merge(@"C:\Windows;C:\Tools\", @"C:\Windows\;C:\Program Files\nodejs\", @"C:\tools;C:\Users\a\go\bin");
+        Assert.Equal(@"C:\Windows;C:\Tools\;C:\Program Files\nodejs\;C:\Users\a\go\bin", merged);
+    }
 }
+

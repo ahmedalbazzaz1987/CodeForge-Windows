@@ -203,6 +203,7 @@ public sealed class IntelliSense
     {
         if (document == null) return;
         var language = document.Language;
+        PathVariable.Refresh();
         if (Locator.Find(language.Id) is { } found)
         {
             MessageBox.Show(Owner(), $"{found.Spec.Name} is already installed and gives {language.Name} files IntelliSense.", "IntelliSense",

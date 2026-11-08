@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- **Newly installed tools are found right away.** CodeForge reads the saved PATH when it starts and before installing a
+  language server, so Node.js, Go or LLVM installed with winget work in IntelliSense, Run and the Terminal without
+  signing out of Windows first.
+
 ## 0.5.1
 
 Fixes from testing IntelliSense on a PC whose Documents folder has an Arabic name.

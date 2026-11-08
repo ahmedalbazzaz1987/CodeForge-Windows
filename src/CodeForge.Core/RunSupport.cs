@@ -204,3 +204,39 @@ public static class BrowserCommand
         return (program, arguments);
     }
 }
+
+/// <summary>
+/// PATH as it is now: a program started from Explorer keeps the PATH Explorer had when it started, so tools installed
+/// since (Node.js with winget) aren't found until sign-out. The saved machine and user PATHs are added to it.
+/// </summary>
+public static class PathVariable
+{
+    public static string Merge(string? current, params string?[] saved)
+    {
+        var entries = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var list in saved.Prepend(current))
+        {
+            foreach (var entry in (list ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var expanded = Environment.ExpandEnvironmentVariables(entry);
+                if (seen.Add(expanded.TrimEnd('\\'))) entries.Add(expanded);
+            }
+        }
+        return string.Join(";", entries);
+    }
+
+    /// <summary>Brings this process's PATH up to date (Windows only), so servers, runs and terminals find new tools.</summary>
+    public static void Refresh()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try
+        {
+            Environment.SetEnvironmentVariable("PATH", Merge(Environment.GetEnvironmentVariable("PATH"),
+                Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine),
+                Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User)));
+        }
+        catch (Exception) { }
+    }
+}
+
