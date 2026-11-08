@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- Escape closes the Object Browser.
+
 ## 0.7.0
 
 **Class View, Object Browser, Server Explorer, more templates and a Code Snippets Manager**, like the Mac version.

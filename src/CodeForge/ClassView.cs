@@ -211,6 +211,8 @@ public static class ObjectBrowser
         ShowTypes();
         if (types.Items.Count == 0) details.Text = "Open a folder with source files to browse its classes.";
         window.Loaded += (_, _) => search.Focus();
+        // Escape closes it, as in other dialogs (it has no Cancel button).
+        window.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) window.Close(); };
         window.ShowDialog();
     }
 }
