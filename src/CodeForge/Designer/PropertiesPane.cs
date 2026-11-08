@@ -1,5 +1,7 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using CodeForge.Core;
 using System.Windows.Forms.Integration;
 using WinForms = System.Windows.Forms;
 
@@ -38,6 +40,8 @@ public sealed class PropertiesPane : DockPanel
         Show(null);
     }
 
+    public string Heading => heading.Text;
+
     /// <summary>Follows a designer's selection, or shows nothing (null).</summary>
     public void Show(DesignSurface? designer)
     {
@@ -62,6 +66,17 @@ public sealed class PropertiesPane : DockPanel
         var info = new System.IO.FileInfo(path);
         grid.SelectedObject = new FileProperties(info, language ?? "", lines ?? 0, encoding ?? "");
         heading.Text = info.Name + "  File Properties";
+        host.Visibility = Visibility.Visible;
+        empty.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>An HTML element's attributes at the caret, editable as in Visual Studio's web designer.</summary>
+    /// <param name="change">(index, name, value): a new value; a null name removes the attribute; an index past the end adds one.</param>
+    public void ShowHtml(HtmlTag tag, Action<int, string?, string?> change)
+    {
+        if (surface != null) return;
+        grid.SelectedObject = new HtmlElementProperties(tag, change);
+        heading.Text = $"<{tag.Name}>  Element";
         host.Visibility = Visibility.Visible;
         empty.Visibility = Visibility.Collapsed;
     }
@@ -121,4 +136,49 @@ public sealed class FileProperties(System.IO.FileInfo info, string language, int
     public int Lines => lines;
     [System.ComponentModel.Category("Text"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("The character encoding the file is saved in.")]
     public string Encoding => encoding;
+}
+
+/// <summary>
+/// An HTML element for the PropertyGrid: one row per attribute, and "(New attribute)" where typing name=value adds one.
+/// Clearing a value removes its attribute.
+/// </summary>
+public sealed class HtmlElementProperties(HtmlTag tag, Action<int, string?, string?> change) : CustomTypeDescriptor
+{
+    public override PropertyDescriptorCollection GetProperties(Attribute[]? attributes) => GetProperties();
+
+    public override PropertyDescriptorCollection GetProperties()
+    {
+        var rows = tag.Attributes.Select((a, i) => (PropertyDescriptor)new AttributeRow(a.Name, a.Value ?? "", i, change)).ToList();
+        rows.Add(new AttributeRow("(New attribute)", "", -1, (_, name, value) =>
+        {
+            var text = value ?? "";
+            var equals = text.IndexOf('=');
+            var key = (equals < 0 ? text : text[..equals]).Trim();
+            if (key.Length > 0) change(tag.Attributes.Count, key, equals < 0 ? null : text[(equals + 1)..].Trim().Trim('"', '\''));
+        }));
+        return new PropertyDescriptorCollection(rows.ToArray());
+    }
+
+    public override object? GetPropertyOwner(PropertyDescriptor? pd) => this;
+
+    private sealed class AttributeRow(string name, string value, int index, Action<int, string?, string?> change)
+        : PropertyDescriptor(name, [new CategoryAttribute(index < 0 ? "Add" : "Attributes"),
+                                    new DescriptionAttribute(index < 0 ? "Type name=value to add an attribute." : "Clear the value to remove the attribute.")])
+    {
+        public override Type ComponentType => typeof(HtmlElementProperties);
+        public override bool IsReadOnly => false;
+        public override Type PropertyType => typeof(string);
+        public override bool CanResetValue(object component) => false;
+        public override object GetValue(object? component) => value;
+        public override void ResetValue(object component) { }
+        public override bool ShouldSerializeValue(object component) => false;
+
+        public override void SetValue(object? component, object? newValue)
+        {
+            var text = newValue as string ?? "";
+            if (index < 0) { change(-1, null, text); return; }
+            if (text.Length == 0 && value.Length > 0) change(index, null, null);
+            else change(index, Name, text);
+        }
+    }
 }

@@ -23,6 +23,11 @@ public sealed class Settings
     public bool ToolboxVisible { get; set; } = true;
     public bool ExplorerVisible { get; set; } = true;
     public bool PanelVisible { get; set; } = true;
+    /// <summary>View ▸ Toolbars: the standard toolbar, and the buttons hidden with Customize (by name).</summary>
+    public bool ToolbarVisible { get; set; } = true;
+    public List<string> HiddenToolbarButtons { get; set; } = [];
+    /// <summary>The HTML designer's last view: Design, Split or Source.</summary>
+    public string HtmlDesignMode { get; set; } = "Split";
     /// <summary>Custom run commands per project folder (Debug ▸ Set Run Command).</summary>
     public Dictionary<string, string> RunCommands { get; set; } = [];
     /// <summary>Bookmarked lines per file (Edit ▸ Bookmarks).</summary>

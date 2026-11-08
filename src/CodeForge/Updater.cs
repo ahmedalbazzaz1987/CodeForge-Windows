@@ -44,7 +44,8 @@ public static class Updater
             if (userInitiated) MessageBox.Show(owner, $"CodeForge {CurrentVersion} is the latest version.", "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        var notes = release.Notes.Length > 1200 ? release.Notes[..1200] + "…" : release.Notes;
+        var notes = ReleaseNotes.Unwrapped(release.Notes).Replace("**", "").Replace("`", "");
+        if (notes.Length > 1200) notes = notes[..1200] + "…";
         var answer = MessageBox.Show(owner, $"CodeForge {release.Version} is available (you have {CurrentVersion}).\n\n{notes}\n\nInstall it now? CodeForge will restart.",
                                      "Update available", MessageBoxButton.YesNo, MessageBoxImage.Information);
         if (answer == MessageBoxResult.Yes) await InstallAsync(owner, release);

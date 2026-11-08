@@ -11,8 +11,12 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
   apps, class libraries, ASP.NET Core, Blazor, gRPC, Worker services, .NET MAUI and test projects.
 - **Find and navigate**: Find and Replace in Files, a Task List of TODO comments, bookmarks, Navigate Backward/Forward
   and Tab-expanding code snippets.
-- **Modern themes**: Modern Light, Modern Dark, Gray and Midnight, plus Visual Studio's Light, Dark and Blue.
-- **Debugger**: F5 debugs C#, VB.NET, F# (netcoredbg) and Python (debugpy) with breakpoints (F9 or a click in the margin),
+- **HTML designer**: Design, Split and Source views for HTML pages, and the Properties window for the element at the
+  caret.
+- **Themes**: Modern Light, Modern Dark, Gray and Midnight, Visual Studio's Light, Dark and Blue, High Contrast,
+  Monokai, Dracula and Solarized; a toolbar you can customize.
+- **Debugger**: F5 debugs C#, VB.NET, F# (netcoredbg), Python (debugpy), C and C++ (GDB), Rust and Swift (lldb-dap) and
+  Go (Delve) with breakpoints (F9 or a click in the margin),
   Step Over/Into/Out (F10/F11/Shift+F11), Locals, Call Stack and expression evaluation; Ctrl+F5 runs without debugging.
 - **IntelliSense**: completion lists, Quick Info, Go To Definition (F12), Find All References (Shift+F12) and live
   errors from language servers (clangd, Pyright/Jedi, TypeScript, csharp-ls, FsAutoComplete, gopls, rust-analyzer,
@@ -26,7 +30,7 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
 - **Run and fix**: F5 runs the project or the current file; build errors from VB.NET, C#, gcc, Python and Node.js go to
   the Error List and are underlined in the code.
 - **Many languages**: C#, VB.NET, F#, XAML, Python, JavaScript, TypeScript, C, C++, Java, Kotlin, Go, Rust, Swift,
-  Ruby, PHP, Lua, PowerShell, Batch, Shell, SQL, HTML, XML, CSS, JSON, YAML, Markdown and more.
+  Objective-C, Ruby, PHP, Lua, PowerShell, Batch, Shell, Makefile, SQL, HTML, XML, CSS, JSON, YAML, Markdown and more.
 - **PowerShell terminal** in the project folder, and **self-updating** from GitHub Releases.
 
 ## Install
@@ -56,7 +60,7 @@ A portable version (`CodeForge-<version>-windows.zip`, no installation) is in ea
 | Run All Tests | Ctrl+R |
 | Find / Go To Line / Go To File | Ctrl+F / Ctrl+G / Ctrl+T |
 | Toggle comment / Duplicate line | Ctrl+K / Ctrl+D |
-| View Code / View Designer (forms) | F7 / Shift+F7 |
+| View Code / View Designer (forms, HTML) | F7 / Shift+F7 |
 | Properties window | F4 |
 | Find in Files / Replace in Files | Ctrl+Shift+F / Ctrl+Shift+H |
 | Task List | Ctrl+Alt+K |

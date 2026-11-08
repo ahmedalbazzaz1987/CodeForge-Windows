@@ -86,4 +86,55 @@ public class DebuggingTests
         Assert.Equal(@"C:\cf\debugpy", configuration.Environment["PYTHONPATH"]);
         Assert.Equal(@"C:\p\main.py", (string?)configuration.Launch["program"]);
     }
+
+    [Fact]
+    public void CompiledLanguagesBuildWithDebugInformation()
+    {
+        var out_ = Path.Combine(Path.GetTempPath(), "cf-build");
+        var c = NativeDebugging.ForFile(Path.Combine("C:", "work", "main.c"), "c", out_)!;
+        Assert.StartsWith("gcc -g -O0", c.Command);
+        Assert.EndsWith("main-debug.exe", c.Program);
+        Assert.Contains("-std=c++20", NativeDebugging.ForFile("x.cpp", "cpp", out_)!.Command);
+        Assert.Contains("all=-N -l", NativeDebugging.ForFile("x.go", "go", out_)!.Command);
+        Assert.StartsWith("rustc -g", NativeDebugging.ForFile("x.rs", "rust", out_)!.Command);
+        Assert.Null(NativeDebugging.ForFile("x.py", "python", out_));
+    }
+
+    [Fact]
+    public void CargoAndGoProjectsBuildForDebugging()
+    {
+        var folder = Directory.CreateTempSubdirectory("cf-native").FullName;
+        File.WriteAllText(Path.Combine(folder, "Cargo.toml"), "[package]\nname = \"hello-app\"\nversion = \"0.1.0\"\n\n[dependencies]\nname = \"x\"\n");
+        var cargo = NativeDebugging.ForProject(folder, Path.GetTempPath())!;
+        Assert.Equal("cargo build", cargo.Command);
+        Assert.Equal(Path.Combine(folder, "target", "debug", "hello-app.exe"), cargo.Program);
+        File.Delete(Path.Combine(folder, "Cargo.toml"));
+        File.WriteAllText(Path.Combine(folder, "go.mod"), "module hello\n");
+        Assert.Equal("go", NativeDebugging.ForProject(folder, Path.GetTempPath())!.LanguageId);
+        File.Delete(Path.Combine(folder, "go.mod"));
+        Assert.Null(NativeDebugging.ForProject(folder, Path.GetTempPath()));
+    }
+
+    [Fact]
+    public void PicksADebuggerForEachLanguage()
+    {
+        var build = new NativeDebugBuild("", "main.exe", "C:\\work", "cpp");
+        string? All(string name) => name + ".exe";
+        Assert.Equal("gdb", NativeDebugging.Configuration(build, All)!.AdapterId);
+        Assert.Equal("lldb-dap", NativeDebugging.Configuration(build, n => n == "lldb-dap" ? "lldb-dap.exe" : null)!.AdapterId);
+        Assert.Equal("lldb-dap", NativeDebugging.Configuration(build with { LanguageId = "rust" }, All)!.AdapterId);
+        var go = NativeDebugging.Configuration(build with { LanguageId = "go" }, All)!;
+        Assert.True(go.UsesSocket);
+        Assert.Equal("exec", (string?)go.Launch["mode"]);
+        Assert.Null(NativeDebugging.Configuration(build, _ => null));
+        Assert.Contains("dlv", NativeDebugging.InstallHint("go"));
+    }
+
+    [Fact]
+    public void ReadsDelvesAddress()
+    {
+        Assert.Equal(("127.0.0.1", 52123), DebugAdapter.ListeningAddress("DAP server listening at: 127.0.0.1:52123"));
+        Assert.Equal(("::1", 4000), DebugAdapter.ListeningAddress("DAP server listening at: [::1]:4000"));
+        Assert.Null(DebugAdapter.ListeningAddress("Type 'dlv help' for list of commands."));
+    }
 }

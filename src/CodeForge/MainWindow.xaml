@@ -29,8 +29,8 @@
         <Menu x:Name="MainMenu" DockPanel.Dock="Top" Background="{DynamicResource ChromeBrush}" Padding="2,0"/>
 
         <!-- Standard toolbar -->
-        <Border DockPanel.Dock="Top" Background="{DynamicResource ChromeBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
-            <StackPanel Orientation="Horizontal" Margin="6,3">
+        <Border x:Name="StandardToolbar" DockPanel.Dock="Top" Background="{DynamicResource ChromeBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <StackPanel x:Name="StandardToolbarItems" Orientation="Horizontal" Margin="6,3">
                 <Button x:Name="NewProjectButton" Style="{StaticResource IconButton}" Content="&#xE8F4;" ToolTip="New Project (Ctrl+Shift+N)"/>
                 <Button x:Name="OpenButton" Style="{StaticResource IconButton}" Content="&#xE8DA;" ToolTip="Open Folder (Ctrl+Shift+O)"/>
                 <Button x:Name="SaveAllButton" Style="{StaticResource IconButton}" Content="&#xE78C;" ToolTip="Save All (Ctrl+Shift+S)"/>

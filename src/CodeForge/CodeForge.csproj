@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CodeForge.Core\CodeForge.Core.csproj" />
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
   </ItemGroup>
 
   <!-- Windows Forms is here for the form designer; keep its names out of the WPF code. -->

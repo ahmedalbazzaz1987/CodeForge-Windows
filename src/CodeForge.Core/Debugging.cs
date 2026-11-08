@@ -56,6 +56,8 @@ public sealed class DapFraming
 public sealed record DebugConfiguration(string Adapter, string[] AdapterArguments, string AdapterId, JsonObject Launch)
 {
     public Dictionary<string, string> Environment { get; init; } = [];
+    /// <summary>Delve speaks the protocol over TCP: it prints "DAP server listening at: host:port" first.</summary>
+    public bool UsesSocket { get; init; }
 }
 
 /// <summary>A frame of the call stack where the program is stopped.</summary>
@@ -92,7 +94,11 @@ public sealed class DebugAdapter(Action<Action> post)
     private readonly object gate = new();
     private int sequence = 1;
 
-    public bool Start(string executable, IEnumerable<string> arguments, IDictionary<string, string>? environment)
+    /// <summary>What the adapter printed on stderr (the last few KB), to explain why it ended before the program started.</summary>
+    public string ErrorText { get { lock (gate) return errorText.ToString(); } }
+    private readonly StringBuilder errorText = new();
+
+    public bool Start(string executable, IEnumerable<string> arguments, IDictionary<string, string>? environment, bool socket = false)
     {
         var info = new ProcessStartInfo(executable)
         {
@@ -113,8 +119,69 @@ public sealed class DebugAdapter(Action<Action> post)
             return false;
         }
         if (process == null) return false;
-        input = process.StandardInput.BaseStream;
-        var output = process.StandardOutput.BaseStream;
+        Task.Run(async () =>
+        {
+            var buffer = new char[4096];
+            int count;
+            try
+            {
+                while ((count = await process.StandardError.ReadAsync(buffer)) > 0)
+                    lock (gate)
+                    {
+                        errorText.Append(buffer, 0, count);
+                        if (errorText.Length > 8000) errorText.Remove(0, errorText.Length - 8000);
+                    }
+            }
+            catch (Exception) { }
+        });
+        if (!socket)
+        {
+            input = process.StandardInput.BaseStream;
+            Read(process.StandardOutput.BaseStream);
+            return true;
+        }
+        // A socket adapter prints its address, then waits for the connection; requests made meanwhile are queued.
+        Task.Run(async () =>
+        {
+            try
+            {
+                while (await process.StandardOutput.ReadLineAsync() is { } line)
+                {
+                    if (ListeningAddress(line) is not { } address) continue;
+                    var client = new System.Net.Sockets.TcpClient();
+                    await client.ConnectAsync(address.Host, address.Port);
+                    var stream = client.GetStream();
+                    List<byte[]> waiting;
+                    lock (gate)
+                    {
+                        input = stream;
+                        waiting = [.. queued];
+                        queued.Clear();
+                    }
+                    foreach (var bytes in waiting) Send(bytes);
+                    Read(stream);
+                    // Keep reading stdout so the adapter never blocks on a full pipe.
+                    _ = process.StandardOutput.ReadToEndAsync();
+                    return;
+                }
+            }
+            catch (Exception) { }
+            post(() => Exited?.Invoke());
+        });
+        return true;
+    }
+
+    private readonly List<byte[]> queued = [];
+
+    /// <summary>"DAP server listening at: 127.0.0.1:52123" (Delve) → the host and port.</summary>
+    public static (string Host, int Port)? ListeningAddress(string line)
+    {
+        var match = Regex.Match(line, @"listening at:?\s*\[?([\w.:]+?)\]?:(\d+)\s*$", RegexOptions.IgnoreCase);
+        return match.Success ? (match.Groups[1].Value, int.Parse(match.Groups[2].Value)) : null;
+    }
+
+    private void Read(Stream output)
+    {
         Task.Run(async () =>
         {
             var chunk = new byte[16384];
@@ -131,9 +198,6 @@ public sealed class DebugAdapter(Action<Action> post)
             catch (Exception) { }
             post(() => Exited?.Invoke());
         });
-        // The adapter's own diagnostics: read so its pipe never fills, but don't show them.
-        Task.Run(() => process.StandardError.ReadToEndAsync());
-        return true;
     }
 
     public void Request(string command, JsonObject? arguments = null, Action<JsonObject>? completion = null)
@@ -154,14 +218,22 @@ public sealed class DebugAdapter(Action<Action> post)
 
     private void Write(JsonObject message)
     {
-        if (input == null) return;
         var bytes = DapFraming.Frame(message.ToJsonString());
+        lock (gate)
+        {
+            if (input == null) { queued.Add(bytes); return; }
+        }
+        Send(bytes);
+    }
+
+    private void Send(byte[] bytes)
+    {
         lock (gate)
         {
             try
             {
-                input.Write(bytes);
-                input.Flush();
+                input?.Write(bytes);
+                input?.Flush();
             }
             catch (Exception) { }
         }
@@ -234,8 +306,18 @@ public sealed class DebugSession
     public bool Start()
     {
         adapter.Event += Handle;
-        adapter.Exited += () => SetState(DebugState.Ended);
-        if (!adapter.Start(Configuration.Adapter, Configuration.AdapterArguments, Configuration.Environment)) return false;
+        adapter.Exited += () =>
+        {
+            // Ended before the program ran: say why (an old GDB without DAP, a missing DLL…).
+            if (State == DebugState.Starting)
+            {
+                var reason = adapter.ErrorText.Trim();
+                Output?.Invoke($"The debugger ({Path.GetFileNameWithoutExtension(Configuration.Adapter)}) ended before the program started." +
+                               (reason.Length > 0 ? "\n" + reason : "") + "\n", DebugOutputKind.Error);
+            }
+            SetState(DebugState.Ended);
+        };
+        if (!adapter.Start(Configuration.Adapter, Configuration.AdapterArguments, Configuration.Environment, Configuration.UsesSocket)) return false;
         adapter.Request("initialize", new JsonObject
         {
             ["clientID"] = "codeforge", ["clientName"] = "CodeForge", ["adapterID"] = Configuration.AdapterId,
@@ -454,4 +536,126 @@ public static class DebugTools
     }
 
     public static bool DebugpyInstalled(string debugpyFolder) => File.Exists(Path.Combine(debugpyFolder, "debugpy", "__init__.py"));
+
+    /// <summary>A compiled program (C, C++, Rust, Swift) under LLVM's lldb-dap, as on the Mac.</summary>
+    public static DebugConfiguration Lldb(string lldbDap, string program, string folder) =>
+        new(lldbDap, [], "lldb-dap", new JsonObject
+        {
+            ["type"] = "lldb-dap", ["request"] = "launch", ["program"] = program, ["args"] = new JsonArray(), ["cwd"] = folder,
+            ["stopOnEntry"] = false,
+        });
+
+    /// <summary>A program built with GCC (MSYS2's MinGW) under GDB's own adapter (GDB 14 and newer: <c>gdb -i dap</c>).</summary>
+    public static DebugConfiguration Gdb(string gdb, string program, string folder) =>
+        new(gdb, ["-i", "dap", "-q"], "gdb", new JsonObject
+        {
+            ["type"] = "gdb", ["request"] = "launch", ["program"] = program, ["args"] = new JsonArray(), ["cwd"] = folder,
+        });
+
+    /// <summary>A Go program under Delve, which shows Go's variables. CodeForge builds the program; Delve runs it.</summary>
+    public static DebugConfiguration Delve(string dlv, string program, string folder) =>
+        new(dlv, ["dap", "--listen=127.0.0.1:0"], "go", new JsonObject
+        {
+            ["type"] = "go", ["request"] = "launch", ["mode"] = "exec", ["program"] = program, ["cwd"] = folder,
+            ["stopOnEntry"] = false, ["outputMode"] = "remote",
+        })
+        { UsesSocket = true };
+}
+
+/// <summary>How to build a compiled program with debug information, and where the program ends up.</summary>
+public sealed record NativeDebugBuild(string Command, string Program, string Folder, string LanguageId);
+
+/// <summary>
+/// Debugging compiled languages, as on the Mac: C and C++ (GDB, or lldb-dap), Rust and Swift (lldb-dap, or GDB) and Go
+/// (Delve). The program is built without optimizations and with debug information first.
+/// </summary>
+public static class NativeDebugging
+{
+    public static readonly HashSet<string> Languages = ["c", "cpp", "rust", "go", "swift"];
+
+    /// <summary>The debug build for a single file: the program goes to <paramref name="outputDirectory"/>.</summary>
+    public static NativeDebugBuild? ForFile(string file, string languageId, string outputDirectory)
+    {
+        var program = Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(file) + "-debug.exe");
+        string Q(string value) => CommandTemplate.Quote(value);
+        var command = languageId switch
+        {
+            "c" => $"gcc -g -O0 -Wall {Q(file)} -o {Q(program)}",
+            "cpp" => $"g++ -g -O0 -std=c++20 -Wall {Q(file)} -o {Q(program)}",
+            "rust" => $"rustc -g {Q(file)} -o {Q(program)}",
+            "go" => $"go build -gcflags \"all=-N -l\" -o {Q(program)} {Q(file)}",
+            "swift" => $"swiftc -g -Onone {Q(file)} -o {Q(program)}",
+            _ => null,
+        };
+        return command == null ? null : new NativeDebugBuild(command, program, Path.GetDirectoryName(file)!, languageId);
+    }
+
+    /// <summary>The debug build for a Cargo project or a Go module; null for other projects.</summary>
+    public static NativeDebugBuild? ForProject(string folder, string outputDirectory)
+    {
+        var cargo = Path.Combine(folder, "Cargo.toml");
+        if (File.Exists(cargo))
+        {
+            var name = CargoPackageName(File.ReadAllText(cargo)) ?? Path.GetFileName(Path.TrimEndingDirectorySeparator(folder));
+            return new NativeDebugBuild("cargo build", Path.Combine(folder, "target", "debug", name + ".exe"), folder, "rust");
+        }
+        if (File.Exists(Path.Combine(folder, "go.mod")))
+        {
+            var program = Path.Combine(outputDirectory, Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)) + "-debug.exe");
+            return new NativeDebugBuild($"go build -gcflags \"all=-N -l\" -o {CommandTemplate.Quote(program)} .", program, folder, "go");
+        }
+        return null;
+    }
+
+    /// <summary>The <c>name</c> in Cargo.toml's [package] section.</summary>
+    public static string? CargoPackageName(string toml)
+    {
+        var inPackage = false;
+        foreach (var raw in toml.Replace("\r\n", "\n").Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.StartsWith('[')) { inPackage = line == "[package]"; continue; }
+            if (inPackage && Regex.Match(line, @"^name\s*=\s*""([^""]+)""") is { Success: true } match) return match.Groups[1].Value;
+        }
+        return null;
+    }
+
+    /// <summary>Which debugger to use, in order of preference; <paramref name="find"/> returns a program's path or null.</summary>
+    public static DebugConfiguration? Configuration(NativeDebugBuild build, Func<string, string?> find)
+    {
+        var program = build.Program;
+        var folder = build.Folder;
+        string? Lldb() => find("lldb-dap");
+        string? Gdb() => find("gdb");
+        return build.LanguageId switch
+        {
+            "go" => find("dlv") is { } dlv ? DebugTools.Delve(dlv, program, folder) : Gdb() is { } gdb ? DebugTools.Gdb(gdb, program, folder) : null,
+            "c" or "cpp" => Gdb() is { } gdb ? DebugTools.Gdb(gdb, program, folder) : Lldb() is { } lldb ? DebugTools.Lldb(lldb, program, folder) : null,
+            _ => Lldb() is { } lldb ? DebugTools.Lldb(lldb, program, folder) : Gdb() is { } gdb ? DebugTools.Gdb(gdb, program, folder) : null,
+        };
+    }
+
+    /// <summary>A debugger on PATH, or where its installer puts it (LLVM, Go's bin folder, MSYS2).</summary>
+    public static string? Find(string name, Func<string, string?> onPath, string? home = null, string? programFiles = null)
+    {
+        if (onPath(name) is { } found) return found;
+        home ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        programFiles ??= Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        string[] places = name switch
+        {
+            "lldb-dap" => [Path.Combine(programFiles, "LLVM", "bin", "lldb-dap.exe")],
+            "dlv" => [Path.Combine(home, "go", "bin", "dlv.exe")],
+            "gdb" => [@"C:\msys64\ucrt64\bin\gdb.exe", @"C:\msys64\mingw64\bin\gdb.exe", @"C:\msys64\clang64\bin\gdb.exe"],
+            _ => [],
+        };
+        return places.FirstOrDefault(File.Exists);
+    }
+
+    /// <summary>What to install when no debugger for the language was found.</summary>
+    public static string InstallHint(string languageId) => languageId switch
+    {
+        "go" => "Install Delve: go install github.com/go-delve/delve/cmd/dlv@latest",
+        "c" or "cpp" => "Install GDB with MSYS2: pacman -S mingw-w64-ucrt-x86_64-gdb (or LLVM, which includes lldb-dap: winget install LLVM.LLVM)",
+        _ => "Install LLVM, which includes lldb-dap: winget install LLVM.LLVM",
+    };
 }

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.0
+
+The rest of the Mac version's features.
+
+- **Debugging C, C++, Rust, Go and Swift** (F5): CodeForge builds the program with debug information, then stops at
+  breakpoints, steps and shows the locals and call stack. C and C++ use GDB (MSYS2: `pacman -S
+  mingw-w64-ucrt-x86_64-gdb`), Rust and Swift LLVM's lldb-dap (`winget install LLVM.LLVM`), and Go Delve (`go install
+  github.com/go-delve/delve/cmd/dlv@latest`). Without a debugger, F5 runs the program and says what to install.
+- **HTML designer**: HTML pages open with Design, Split and Source views (the buttons under the page, or View ▸
+  Designer and View ▸ Code). Clicking an element in the design view puts the caret in its tag.
+- **Properties for HTML elements**: in HTML and Razor pages, the Properties window shows the attributes of the tag at
+  the caret. Change a value, clear it to remove the attribute, or type `name=value` under (New attribute) to add one.
+- **More color themes** in Tools ▸ Options: High Contrast, Monokai, Dracula, Solarized Dark and Solarized Light.
+- **Toolbar**: View ▸ Show Toolbar (Ctrl+Alt+T) and View ▸ Customize Toolbar to choose its buttons.
+- Highlighting for **Objective-C** and **Makefiles** (Start runs `make`).
+- **Opening a project closes every tab**, as closing a solution in Visual Studio does, including files opened on their
+  own; they used to stay open, with their errors, from project to project.
+- Update messages show the release notes as flowing text.
+
 ## 0.8.1
 
 Fixes from testing 0.8.0 on Windows.

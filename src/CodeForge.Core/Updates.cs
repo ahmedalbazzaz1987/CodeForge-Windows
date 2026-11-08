@@ -89,3 +89,29 @@ public static class FuzzyMatch
         return score;
     }
 }
+
+public static class ReleaseNotes
+{
+    /// <summary>
+    /// Joins the lines of a paragraph or list item that were wrapped in the changelog, as Markdown does, so the notes
+    /// read as flowing text in the update message. Code fences are left as they are.
+    /// </summary>
+    public static string Unwrapped(string markdown)
+    {
+        var lines = new List<string>();
+        var inCode = false;
+        foreach (var line in markdown.Replace("\r\n", "\n").Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("```")) { inCode = !inCode; lines.Add(line); continue; }
+            var startsBlock = trimmed.Length == 0 || trimmed.StartsWith("- ") || trimmed.StartsWith("* ") || trimmed.StartsWith('#') ||
+                              System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^\d+\. ");
+            if (!inCode && !startsBlock && lines.Count > 0 && lines[^1].Trim() is { Length: > 0 } previous &&
+                !previous.StartsWith('#') && !previous.StartsWith("```"))
+                lines[^1] += " " + trimmed;
+            else
+                lines.Add(line);
+        }
+        return string.Join("\n", lines);
+    }
+}

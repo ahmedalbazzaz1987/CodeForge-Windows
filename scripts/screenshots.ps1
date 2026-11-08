@@ -107,6 +107,8 @@ $text = Report "19-test-project" @{ CF_OPEN = "$work\Tests1;$work\Tests1\UnitTes
 if ($text -notmatch "dotnet test" -or $text -notmatch "Passed!") { $failed += "Test project (tests didn't run)" }
 $text = Report "20-switch-project" @{ CF_OPEN = "$demo;$demo\first.py"; CF_ACTIONS = "open:$work\Lib1,dump"; CF_DELAY = "6" }
 if ($text -match "TABS: .*first.py") { $failed += "Switching projects left the old tabs open" }
+$text = Report "20b-loose-file" @{ CF_OPEN = "$runs\hello.lua"; CF_ACTIONS = "open:$work\Lib1,dump"; CF_DELAY = "6" }
+if ($text -match "TABS: .*hello.lua") { $failed += "Opening a project left a loose file's tab open" }
 
 # IntelliSense without a server (VB.NET): keywords, snippets and the file's words.
 Shot "21-vb-completion" @{ CF_OPEN = "$work\BrokenVB;$work\BrokenVB\Program.vb"; CF_ACTIONS = "caret:Console.WriteLine(to,complete"; CF_DELAY = "3" }
@@ -166,6 +168,25 @@ $env:CF_ANSWER = "Customer"
 $text = Report "31-add-new-item" @{ CF_OPEN = "$refactor;$refactor\Members.vb"; CF_ACTIONS = "additem,dump" }
 Remove-Item Env:CF_ANSWER
 if (-not (Test-Path "$refactor\Customer.vb")) { $failed += "Add New Item"; Write-Host $text }
+
+# The HTML designer (Split view) and the Properties window for the element at the caret; a theme from the Mac version.
+$web = "$work\Web"
+New-Item -ItemType Directory -Force $web | Out-Null
+Set-Content "$web\index.html" "<!DOCTYPE html>`r`n<html>`r`n<head><title>Shop</title><link rel=`"stylesheet`" href=`"site.css`"></head>`r`n<body>`r`n  <h1>Coffee Shop</h1>`r`n  <form>`r`n    <input type=`"text`" name=`"user`" placeholder=`"Your name`" required>`r`n    <button type=`"submit`">Order</button>`r`n  </form>`r`n</body>`r`n</html>`r`n"
+Set-Content "$web\site.css" "body { font-family: Segoe UI; background: #FFF8E7; } h1 { color: #8B4513; }`r`n"
+$text = Report "34-html-designer" @{ CF_OPEN = "$web;$web\index.html"; CF_ACTIONS = "htmlsplit,caret:<input,dump"; CF_ACTION_GAP = "3"; CF_DELAY = "4" }
+if ($text -notmatch "PROPERTIES: <input>") { $failed += "HTML Properties"; Write-Host $text }
+Shot "35-monokai" @{ CF_OPEN = "$web;$web\index.html"; CF_ACTIONS = "monokai,htmlsplit"; CF_DELAY = "5" }
+
+# Native debugging: Go under Delve and C under GDB stop at a breakpoint and show the locals.
+$native = "$work\Native"
+New-Item -ItemType Directory -Force $native | Out-Null
+Set-Content "$native\main.go" "package main`r`n`r`nimport `"fmt`"`r`n`r`nfunc main() {`r`n`ttotal := 0`r`n`tfor i := 1; i <= 3; i++ {`r`n`t`ttotal += i`r`n`t}`r`n`tfmt.Println(`"total`", total)`r`n}`r`n"
+Set-Content "$native\main.c" "#include <stdio.h>`r`n`r`nint main(void) {`r`n    int total = 0;`r`n    for (int i = 1; i <= 3; i++) {`r`n        total += i;`r`n    }`r`n    printf(`"total %d\n`", total);`r`n    return 0;`r`n}`r`n"
+$text = Report "32-debug-go" @{ CF_OPEN = "$native\main.go"; CF_ACTIONS = "goto:8,breakpoint,debug,dump,continue,dump"; CF_ACTION_GAP = "15"; CF_DELAY = "5" }
+if ($text -notmatch "DEBUG: Paused go at main.main:8" -or $text -notmatch "LOCALS: .*total=") { $failed += "Go debugging with Delve"; Write-Host $text }
+$text = Report "33-debug-c" @{ CF_OPEN = "$native\main.c"; CF_ACTIONS = "goto:6,breakpoint,debug,dump,continue,dump"; CF_ACTION_GAP = "15"; CF_DELAY = "5" }
+if ($text -notmatch "DEBUG: Paused gdb at main:6" -or $text -notmatch "LOCALS: .*total=") { $failed += "C debugging with GDB"; Write-Host $text }
 
 if (Test-Path "$env:APPDATA\CodeForge\errors.log") { Get-Content "$env:APPDATA\CodeForge\errors.log" }
 Get-ChildItem $work -Filter errors.log -Recurse | ForEach-Object { Write-Host "== $($_.FullName)"; Get-Content $_.FullName }

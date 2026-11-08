@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private string? runFolder;
     private bool openedBrowser;
     private Action? afterRun;
+    private readonly Dictionary<EditorDocument, HtmlDesignHost> htmlPages = [];
     /// <summary>The run is Run All Tests: its results go to Test Explorer.</summary>
     private bool testRun;
     private string? pendingOpenFolder;
@@ -216,8 +217,8 @@ public partial class MainWindow : Window
             Item("Clear All Bookmarks", ClearBookmarks, "Ctrl+Shift+F2", () => settings.Bookmarks.Count > 0));
 
         Menu("_View",
-            Item("_Code", ViewCode, "F7", () => CurrentDesigner != null || (Current?.Path is { } p && IsForm(p))),
-            Item("_Designer", ViewDesigner, "Shift+F7", () => Current?.Path is { } p && IsForm(p)),
+            Item("_Code", ViewCode, "F7", () => CurrentDesigner != null || (Current?.Path is { } p && IsForm(p)) || (Current != null && htmlPages.ContainsKey(Current))),
+            Item("_Designer", ViewDesigner, "Shift+F7", () => (Current?.Path is { } p && IsForm(p)) || (Current != null && htmlPages.ContainsKey(Current))),
             Line(),
             Item("Solution _Explorer", () => SetPane(ExplorerPane, true), "Ctrl+Alt+L"),
             Item("_Properties Window", () => SetPane(ExplorerPane, true), "F4"),
@@ -238,6 +239,14 @@ public partial class MainWindow : Window
             Item("Task _List", ShowTaskList, "Ctrl+Alt+K"),
             Item("Find _Results", () => ShowPanel(FindResultsTab)),
             Item("_Terminal", () => ShowPanel(TerminalTab), "Ctrl+OemTilde"),
+            Line(),
+            Item("Show Tool_bar", () =>
+            {
+                settings.ToolbarVisible = !settings.ToolbarVisible;
+                settings.Save();
+                ApplyToolbar();
+            }, "Ctrl+Alt+T"),
+            Item("C_ustomize Toolbar…", CustomizeToolbar),
             Line(),
             Item("Navigate _Backward", NavigateBackward, "Ctrl+OemMinus", () => history.CanGoBack),
             Item("Navigate _Forward", NavigateForward, "Ctrl+Shift+OemMinus", () => history.CanGoForward),
@@ -441,6 +450,8 @@ public partial class MainWindow : Window
             Left = b[0]; Top = b[1]; Width = b[2]; Height = b[3];
         }
         if (settings.WindowMaximized) WindowState = WindowState.Maximized;
+        ApplyToolbar();
+        if (Enum.TryParse<HtmlDesignHost.Mode>(settings.HtmlDesignMode, out var designMode)) HtmlDesignHost.LastMode = designMode;
         if (args.Length > 0)
         {
             foreach (var arg in args) OpenPath(Path.GetFullPath(arg));
@@ -470,6 +481,7 @@ public partial class MainWindow : Window
         settings.OpenFiles = documents.Where(d => d.Path != null).Select(d => d.Path!).Concat(designers.Select(d => "design:" + d.CodePath)).ToList();
         settings.SelectedFile = Current?.Path ?? (CurrentDesigner != null ? "design:" + CurrentDesigner.CodePath : null);
         settings.WindowMaximized = WindowState == WindowState.Maximized;
+        settings.HtmlDesignMode = HtmlDesignHost.LastMode.ToString();
         if (WindowState == WindowState.Normal) settings.WindowBounds = [Left, Top, Width, Height];
         if (ToolboxPane.Visibility == Visibility.Visible) settings.ToolboxWidth = ToolboxColumn.ActualWidth;
         if (ExplorerPane.Visibility == Visibility.Visible) settings.ExplorerWidth = ExplorerColumn.ActualWidth;
@@ -521,7 +533,8 @@ public partial class MainWindow : Window
 
     public void SetWorkspace(string? folder)
     {
-        if (workspace != null && !SamePath(workspace, folder) && !CloseProject(workspace)) return;
+        // Also when no folder was open: files opened on their own don't carry over into a project.
+        if ((workspace != null || folder != null) && !SamePath(workspace, folder) && !CloseProject(workspace)) return;
         workspace = folder;
         if (folder != null)
         {
@@ -536,17 +549,17 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Closes what belongs to the project being left, like closing a solution in Visual Studio: its tabs (asking about
-    /// unsaved changes first), the program it runs, its output, errors, Find Results and Task List.
+    /// Closes the project being left, like closing a solution in Visual Studio: every tab (asking about unsaved changes
+    /// first), the program it runs, its output, errors, Find Results and Task List. Files from outside the project go
+    /// too: kept, they piled up from project to project with their errors.
     /// </summary>
-    private bool CloseProject(string folder)
+    private bool CloseProject(string? folder)
     {
-        bool Inside(string? path) => path != null && path.StartsWith(Path.TrimEndingDirectorySeparator(folder) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-        var designersInside = designers.Where(d => Inside(d.CodePath)).ToList();
-        var documentsInside = documents.Where(d => Inside(d.Path)).ToList();
+        var designersInside = designers.ToList();
+        var documentsInside = documents.ToList();
         if (!designersInside.All(ConfirmDiscard) || !documentsInside.All(ConfirmDiscard)) return false;
         runner.Stop();
-        intelliSense.CloseFolder(folder);
+        if (folder != null) intelliSense.CloseFolder(folder);
         foreach (var designer in designersInside) RemoveDesigner(designer);
         foreach (var document in documentsInside) RemoveDocument(document);
         OutputText.Clear();
@@ -760,10 +773,25 @@ public partial class MainWindow : Window
     {
         documents.Add(document);
         var tab = new TabItem { Tag = document, Content = document.Editor };
+        // HTML pages get Design, Split and Source views.
+        if (document.Language.Id == "html")
+        {
+            var page = new HtmlDesignHost(document);
+            page.ElementClicked += (tag, index) =>
+            {
+                if (HtmlTag.ElementOffset(document.Editor.Text, tag, index) is not { } offset) return;
+                document.Editor.CaretOffset = offset;
+                document.Editor.ScrollTo(document.Editor.TextArea.Caret.Line, document.Editor.TextArea.Caret.Column);
+                ShowFileProperties();
+            };
+            tab.Content = page;
+            htmlPages[document] = page;
+        }
         DocumentTabs.Items.Add(tab);
         // Saving changes the size and date in the Properties window.
         document.StateChanged += () => { UpdateTab(document); UpdateChrome(); if (document == Current && !document.IsDirty) ShowFileProperties(); };
         document.CaretMoved += UpdatePosition;
+        if (document.Language.Id is "html" or "razor") document.CaretMoved += () => { if (document == Current) ScheduleHtmlProperties(); };
         // Quick Info on hover (with the problem there), completion, Ctrl+Click and live errors.
         intelliSense.Attach(document);
         document.Saved += UpdateChrome;
@@ -816,7 +844,27 @@ public partial class MainWindow : Window
 
     private void ShowFileProperties()
     {
-        if (CurrentDesigner == null) properties.ShowFile(Current?.Path, Current?.Language.Name, Current?.Editor.LineCount, Current?.EncodingName);
+        if (CurrentDesigner != null) return;
+        // In HTML and Razor pages, the element at the caret, as in Visual Studio's web designer.
+        if (Current is { Language.Id: "html" or "razor" } page && HtmlTag.At(page.Editor.CaretOffset, page.Editor.Text) is { } tag)
+        {
+            properties.ShowHtml(tag, (index, name, value) => ChangeAttribute(page, tag, index, name, value));
+            return;
+        }
+        properties.ShowFile(Current?.Path, Current?.Language.Name, Current?.Editor.LineCount, Current?.EncodingName);
+    }
+
+    /// <summary>Rewrites a tag after an edit in the Properties window, as one undoable change.</summary>
+    private void ChangeAttribute(EditorDocument page, HtmlTag shown, int index, string? name, string? value)
+    {
+        // The page may have changed since the Properties window showed the tag.
+        if (HtmlTag.At(shown.Start + 1, page.Editor.Text) is not { } tag || tag.Start != shown.Start) return;
+        if (index >= tag.Attributes.Count) { if (name != null) tag.Attributes.Add((name, value)); }
+        else if (name != null) tag.Attributes[index] = (name, value);
+        else tag.Attributes.RemoveAt(index);
+        page.Editor.Document.Replace(tag.Start, tag.Length, tag.Source);
+        page.Editor.CaretOffset = tag.Start + 1;
+        ShowFileProperties();
     }
 
     private void DocumentSelected()
@@ -925,6 +973,7 @@ public partial class MainWindow : Window
         StoreBookmarks(document);
         intelliSense.Detach(document);
         queryConnections.Remove(document);
+        htmlPages.Remove(document);
         var index = documents.IndexOf(document);
         documents.Remove(document);
         document.Detach();
@@ -1095,6 +1144,47 @@ public partial class MainWindow : Window
     private static string DebuggerFolder(string name) =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CodeForge", name);
 
+    /// <summary>The standard toolbar's buttons, with the names Customize shows (their tooltips without the shortcut).</summary>
+    private IEnumerable<(FrameworkElement Item, string Name)> ToolbarButtons() =>
+        StandardToolbarItems.Children.OfType<FrameworkElement>()
+            .Where(e => e is not Separator)
+            .Select(e => (e, e.ToolTip is string tip ? tip.Split(" (")[0] : e.Name));
+
+    private void ApplyToolbar()
+    {
+        StandardToolbar.Visibility = settings.ToolbarVisible ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var (item, name) in ToolbarButtons())
+            item.Visibility = settings.HiddenToolbarButtons.Contains(name) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>View ▸ Customize Toolbar: which buttons the standard toolbar shows, like Visual Studio's Customize dialog.</summary>
+    private void CustomizeToolbar()
+    {
+        var window = DialogKit.Make(this, "Customize Toolbar", 360, 480);
+        window.SizeToContent = SizeToContent.Height;
+        var panel = new StackPanel { Margin = new Thickness(18) };
+        panel.Children.Add(new TextBlock { Text = "Buttons on the Standard toolbar:", Margin = new Thickness(0, 0, 0, 8) });
+        var boxes = new List<(CheckBox Box, string Name)>();
+        foreach (var (_, name) in ToolbarButtons())
+        {
+            var box = new CheckBox { Content = name, IsChecked = !settings.HiddenToolbarButtons.Contains(name), Margin = new Thickness(0, 3, 0, 3) };
+            boxes.Add((box, name));
+            panel.Children.Add(box);
+        }
+        var show = new CheckBox { Content = "Show the toolbar", IsChecked = settings.ToolbarVisible, Margin = new Thickness(0, 12, 0, 0) };
+        panel.Children.Add(show);
+        var reset = new Button { Content = "Reset", MinWidth = 90, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 12, 0, 0) };
+        reset.Click += (_, _) => { foreach (var (box, _) in boxes) box.IsChecked = true; show.IsChecked = true; };
+        panel.Children.Add(reset);
+        panel.Children.Add(DialogKit.Buttons(window, "OK"));
+        window.Content = panel;
+        if (window.ShowDialog() != true) return;
+        settings.HiddenToolbarButtons = boxes.Where(b => b.Box.IsChecked != true).Select(b => b.Name).ToList();
+        settings.ToolbarVisible = show.IsChecked == true;
+        settings.Save();
+        ApplyToolbar();
+    }
+
     /// <summary>
     /// F5, as in Visual Studio: debugs a .NET program or a Python file, continues when paused, and runs anything else
     /// without debugging (test projects run their tests, class libraries say they can't start).
@@ -1116,7 +1206,55 @@ public partial class MainWindow : Window
             StartPythonDebugging(document);
             return;
         }
+        if (CustomRunCommand == null && NativeBuild() is { } build)
+        {
+            StartNativeDebugging(build);
+            return;
+        }
         Start();
+    }
+
+    /// <summary>The debug build for a Cargo project, a Go module, or the current C, C++, Rust, Go or Swift file.</summary>
+    private NativeDebugBuild? NativeBuild()
+    {
+        var output = Path.Combine(Path.GetTempPath(), "CodeForge", "build");
+        if (ProjectRunPlan() is { } plan) return NativeDebugging.ForProject(plan.Folder, output);
+        if (Current is { } document && NativeDebugging.Languages.Contains(document.Language.Id))
+        {
+            if (document.Path == null && !SaveAs(document)) return null;
+            return NativeDebugging.ForFile(document.Path!, document.Language.Id, output);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// C, C++, Rust, Go and Swift: a build with debug information, then the program under GDB, lldb-dap or Delve. Without
+    /// any of them installed, the program runs without debugging and the Output says what to install.
+    /// </summary>
+    private void StartNativeDebugging(NativeDebugBuild build)
+    {
+        var configuration = NativeDebugging.Configuration(build, name => NativeDebugging.Find(name, n => ToolCheck.Find(n)));
+        if (configuration == null)
+        {
+            Start();
+            AppendOutput($"\nTo stop at breakpoints, install a debugger. {NativeDebugging.InstallHint(build.LanguageId)}\n");
+            return;
+        }
+        if (!ToolIsInstalled(build.Command)) return;
+        SaveAll();
+        Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "CodeForge", "build"));
+        afterRun = () =>
+        {
+            if (!File.Exists(build.Program))
+            {
+                ShowError("The program wasn't found", $"The build didn't produce {Path.GetFileName(build.Program)}.");
+                return;
+            }
+            StartSession(configuration, Path.GetFileName(build.Program));
+            if (build.LanguageId == "go" && configuration.AdapterId != "go")
+                AppendOutput($"GDB can stop and step through Go code, but it can't show Go's variables well. {NativeDebugging.InstallHint("go")}\n");
+        };
+        RunCommand(build.Command, build.Folder, "Building for debugging…", Languages.ById(build.LanguageId));
     }
 
     private void StopAll()
@@ -1778,11 +1916,13 @@ public partial class MainWindow : Window
     private void ViewCode()
     {
         if (CurrentDesigner is { } designer) OpenPath(designer.CodePath);
+        else if (Current is { } page && htmlPages.TryGetValue(page, out var host)) host.SetMode(HtmlDesignHost.Mode.Source);
     }
 
     private void ViewDesigner()
     {
         if (Current?.Path is { } path && IsForm(path)) OpenDesigner(path);
+        else if (Current is { } page && htmlPages.TryGetValue(page, out var host)) host.SetMode(HtmlDesignHost.Mode.Design);
     }
 
     /// <summary>Double-clicking a control (or the form) opens its default event handler in the code, creating it if needed.</summary>
@@ -1984,6 +2124,17 @@ public partial class MainWindow : Window
         UpdatePosition();
     }
 
+    private System.Windows.Threading.DispatcherTimer? htmlPropertiesTimer;
+
+    /// <summary>The Properties window follows the caret in HTML pages, a moment after it stops.</summary>
+    private void ScheduleHtmlProperties()
+    {
+        htmlPropertiesTimer ??= new System.Windows.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(150), System.Windows.Threading.DispatcherPriority.Background,
+            (_, _) => { htmlPropertiesTimer!.Stop(); ShowFileProperties(); }, Dispatcher);
+        htmlPropertiesTimer.Stop();
+        htmlPropertiesTimer.Start();
+    }
+
     private void UpdatePosition()
     {
         if (Current is not { } document) { StatusPosition.Text = ""; return; }
@@ -2132,12 +2283,16 @@ public partial class MainWindow : Window
             case "build": Build(); break;
             case "errors": ShowPanel(ErrorsTab); break;
             case "terminal": ShowPanel(TerminalTab); break;
-            case "dark" or "gray" or "midnight" or "light" or "blue" or "vs-dark" or "vs-light": settings.Theme = action; Themes.Apply(action); break;
+            case var theme when Themes.Names.Contains(theme): settings.Theme = action; Themes.Apply(action); break;
             case "tasks": ShowTaskList(); break;
             case "report":
                 File.AppendAllText(Environment.GetEnvironmentVariable("CF_REPORT") ?? "report.txt", $"{Current?.DisplayName}:{Current?.CaretPosition.Line}\n");
                 break;
             case "stop": runner.Stop(); break;
+            case "breakpoint": ToggleBreakpoint(); break;
+            case "htmlsplit": if (Current != null && htmlPages.TryGetValue(Current, out var splitPage)) splitPage.SetMode(HtmlDesignHost.Mode.Split); break;
+            case "debug": StartDebugging(); break;
+            case "continue": debugSession?.Resume(); break;
             case "dump":
                 // Status, open tabs and output, for checks in scripts/screenshots.ps1.
                 File.AppendAllText(Environment.GetEnvironmentVariable("CF_REPORT") ?? "report.txt",
@@ -2146,7 +2301,10 @@ public partial class MainWindow : Window
                     $"QUERY: {QuerySummary.Text}\nSYMBOLS: {string.Join(",", classView.Symbols.Select(x => x.Name))}\n" +
                     $"COMPLETION: {string.Join(",", intelliSense.CompletionLabels)}\nCODELENS: {string.Join(" / ", Current?.CodeLensTexts ?? Enumerable.Empty<string>())}\n" +
                     $"ERRORS:\n{string.Join("\n", (ErrorList.ItemsSource as IEnumerable<ErrorRow> ?? Enumerable.Empty<ErrorRow>()).Select(r => $"{r.FileName}:{r.Line}: {r.Message}"))}\n" +
-                    $"FINDRESULTS:\n{string.Join("\n", (FindResults.ItemsSource as IEnumerable<LocationRow> ?? Enumerable.Empty<LocationRow>()).Select(r => $"{Path.GetFileName(r.FullPath)}:{r.Line}"))}\n");
+                    $"FINDRESULTS:\n{string.Join("\n", (FindResults.ItemsSource as IEnumerable<LocationRow> ?? Enumerable.Empty<LocationRow>()).Select(r => $"{Path.GetFileName(r.FullPath)}:{r.Line}"))}\n" +
+                    $"DEBUG: {debugSession?.State} {debugSession?.Configuration.AdapterId} at {selectedFrame?.Name}:{selectedFrame?.Line}\n" +
+                    $"PROPERTIES: {properties.Heading}\n" +
+                    $"LOCALS: {string.Join(", ", LocalsTree.Items.OfType<TreeViewItem>().Select(i => i.Tag is DebugVariable v ? $"{v.Name}={v.Value}" : ""))}\n");
                 break;
             case "text":
                 File.AppendAllText(Environment.GetEnvironmentVariable("CF_REPORT") ?? "report.txt", $"TEXT:\n{Current?.Editor.Text}\nEND\n");

@@ -118,3 +118,39 @@ public class EditorToolsTests
     }
 }
 
+
+public class HtmlTagTests
+{
+    [Fact]
+    public void ReadsTheTagAroundTheCaret()
+    {
+        var text = "<form>\n  <input type=\"text\" name='user' required>\n</form>";
+        var tag = HtmlTag.At(text.IndexOf("name"), text)!;
+        Assert.Equal("input", tag.Name);
+        Assert.Equal("type=text,name=user,required=∅", string.Join(",", tag.Attributes.Select(a => $"{a.Name}={a.Value ?? "∅"}")));
+        Assert.Equal(text.IndexOf("<input"), tag.Start);
+        tag.Attributes[1] = ("name", "say \"hi\"");
+        tag.Attributes.RemoveAt(2);
+        Assert.Equal("<input type=\"text\" name=\"say &quot;hi&quot;\">", tag.Source);
+        Assert.Equal("form", HtmlTag.At(2, text)!.Name);
+        Assert.True(HtmlTag.At(text.Length, "<br/>" ) is { SelfClosing: true, Name: "br" });
+        Assert.Null(HtmlTag.At(3, "no tags"));
+    }
+
+    [Fact]
+    public void FindsAnElementClickedInTheDesigner()
+    {
+        var text = "<p>a</p><P class=x>b</p><pre></pre><p>c</p>";
+        Assert.Equal(text.IndexOf("P class") , HtmlTag.ElementOffset(text, "p", 1));
+        Assert.Equal(text.LastIndexOf("<p>") + 1, HtmlTag.ElementOffset(text, "p", 2));
+        Assert.Null(HtmlTag.ElementOffset(text, "p", 3));
+    }
+
+    [Fact]
+    public void AddsABaseForRelativeLinks()
+    {
+        Assert.Equal("<html><head><base href=\"https://x/\"><title>t</title></head></html>",
+                     HtmlTag.WithBase("<html><head><title>t</title></head></html>", "https://x/"));
+        Assert.Equal("<base href=\"https://x/\"><p>hi</p>", HtmlTag.WithBase("<p>hi</p>", "https://x/"));
+    }
+}

@@ -55,6 +55,8 @@ public class LanguageAndBuildTests
         Assert.Equal("xaml", Languages.ForFile("MainWindow.xaml").Id);
         Assert.Equal("xml", Languages.ForFile("App.vbproj").Id);
         Assert.Equal("dockerfile", Languages.ForFile("Dockerfile").Id);
+        Assert.Equal("makefile", Languages.ForFile("Makefile").Id);
+        Assert.Equal("objc", Languages.ForFile("AppDelegate.m").Id);
         Assert.Equal("text", Languages.ForFile("README").Id);
         Assert.Equal(Languages.All.Count, Languages.All.Select(l => l.Id).Distinct().Count());
     }
@@ -147,6 +149,13 @@ public class UpdateTests
         Assert.True(AppVersion.Parse("v1.2")! < AppVersion.Parse("1.2.1")!);
         Assert.Equal(AppVersion.Parse("1.0")!, AppVersion.Parse("1.0.0-beta")!);
         Assert.Null(AppVersion.Parse("next"));
+    }
+
+    [Fact]
+    public void UnwrapsReleaseNotes()
+    {
+        var notes = "Fixes.\n\n- **Opening a project** closes\n  every tab.\n- Another\nline.\n\n```\nkeep\nthis\n```";
+        Assert.Equal("Fixes.\n\n- **Opening a project** closes every tab.\n- Another line.\n\n```\nkeep\nthis\n```", ReleaseNotes.Unwrapped(notes));
     }
 
     [Fact]
