@@ -76,7 +76,12 @@ public sealed class IntelliSense
         {
             // With the list open, . ( ; [ , accept the selected name first, as in Visual Studio; other punctuation closes it.
             if (completion == null || e.Text.Length == 0 || BasicIntelliSense.IsIdentifier(e.Text[0])) return;
-            if (".(;[,".Contains(e.Text[0]) && completion.CompletionList.SelectedItem != null && completion.EndOffset > completion.StartOffset)
+            // Only a name that starts with what was typed (Visual Studio's "soft" selection otherwise), and never a
+            // snippet: typing "Main(" quickly mustn't turn into another name or a whole template.
+            var typed = completion.EndOffset > completion.StartOffset
+                ? completion.TextArea.Document.GetText(completion.StartOffset, completion.EndOffset - completion.StartOffset) : "";
+            if (".(;[,".Contains(e.Text[0]) && completion.CompletionList.SelectedItem is CompletionItem { IsSnippet: false } selected &&
+                typed.Length > 0 && selected.Text.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
                 completion.CompletionList.RequestInsertion(e);
             else
                 completion.Close();
@@ -692,6 +697,8 @@ public sealed class IntelliSense
 /// <summary>A row in the completion list: a colored badge for the kind, the name, and its detail on the right.</summary>
 public sealed class CompletionItem(CompletionEntry entry) : ICompletionData
 {
+    public bool IsSnippet => entry.Snippet != null;
+
     public System.Windows.Media.ImageSource? Image => null;
     public string Text => entry.FilterText;
     public double Priority => entry.Kind == 1 ? -1 : 0;

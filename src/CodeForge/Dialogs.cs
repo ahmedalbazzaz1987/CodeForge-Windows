@@ -322,6 +322,8 @@ public static class AddNewItemWindow
     public static (ItemTemplate Template, string Name)? Ask(Window owner, string? preferredGroup)
     {
         var window = DialogKit.Make(owner, "Add New Item", 620, 460);
+        // As tall as its contents, so the Add and Cancel buttons always show.
+        window.SizeToContent = SizeToContent.Height;
         var groups = new ListBox { Width = 140 };
         var items = new ListBox { Margin = new Thickness(10, 0, 0, 0) };
         var name = new TextBox();

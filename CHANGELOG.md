@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.1
+
+Fixes from testing 0.8.0 on Windows.
+
+- Typing quickly no longer lets `(`, `.` or `;` accept a completion that doesn't start with what you typed, or a
+  snippet (typing `Sub Main(` could become another name or a whole template).
+- Add New Item shows its Add and Cancel buttons (they were cut off).
+
 ## 0.8.0
 
 Closes the remaining gap with the Mac version.
