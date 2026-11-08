@@ -63,7 +63,7 @@ public static class LspUri
 
 /// <summary>How a language server is started.</summary>
 public sealed record ServerLaunch(string Executable, IReadOnlyList<string> Arguments, IReadOnlyDictionary<string, string> Environment,
-    bool PlainUris = false);
+    bool PlainUris = false, string? InitializationOptions = null);
 
 /// <summary>A language server CodeForge knows how to start (and, for some, install).</summary>
 /// <param name="Executables">Program names to look for, in order.</param>
@@ -76,7 +76,7 @@ public sealed record LanguageServerSpec(
     string Id, string Name, string[] Languages, string[] Executables, string InstallHint,
     string[]? Arguments = null, bool InstalledCopyOnly = false,
     string[]? NpmPackages = null, string? DotNetTool = null, string? PipPackage = null, string? PythonStart = null,
-    string? DownloadSize = null, bool PlainUris = false)
+    string? DownloadSize = null, bool PlainUris = false, string? InitializationOptions = null)
 {
     public IReadOnlyList<string> Args => Arguments ?? [];
     public bool CanInstall => NpmPackages != null || DotNetTool != null || PipPackage != null;
@@ -106,7 +106,9 @@ public static class LanguageServerSpecs
         new("csharp-ls", "csharp-ls", ["csharp"], ["csharp-ls"], "CodeForge can install it for you (needs the .NET SDK).",
             DotNetTool: "csharp-ls", DownloadSize: "about 40 MB"),
         new("fsautocomplete", "FsAutoComplete", ["fsharp"], ["fsautocomplete"], "CodeForge can install it for you (needs the .NET SDK).",
-            DotNetTool: "fsautocomplete", DownloadSize: "about 60 MB"),
+            DotNetTool: "fsautocomplete", DownloadSize: "about 60 MB",
+            // Otherwise it waits for the client to pick a project (fsharp/workspaceLoad), as Ionide does.
+            InitializationOptions: """{ "AutomaticWorkspaceInit": true }"""),
         new("gopls", "gopls", ["go"], ["gopls"], "Install it with: go install golang.org/x/tools/gopls@latest"),
         new("rust-analyzer", "rust-analyzer", ["rust"], ["rust-analyzer"], "Install it with: rustup component add rust-analyzer"),
         new("jdtls", "Eclipse JDT LS", ["java"], ["jdtls"], "Install Eclipse JDT LS from github.com/eclipse-jdtls/eclipse.jdt.ls and put jdtls on PATH."),
@@ -170,14 +172,14 @@ public sealed class LanguageServerLocator(string installFolder, string? path = n
             if (!Directory.Exists(Path.Combine(folder, spec.PipPackage!.Replace('-', '_'))) || Python() is not { } python) return null;
             environment["PYTHONPATH"] = folder;
             environment["PYTHONUTF8"] = "1";
-            return new ServerLaunch(python, ["-c", spec.PythonStart], environment, spec.PlainUris);
+            return new ServerLaunch(python, ["-c", spec.PythonStart], environment, spec.PlainUris, spec.InitializationOptions);
         }
         // .NET tools built for an older .NET still run on the SDK that's installed.
         if (spec.DotNetTool != null) environment["DOTNET_ROLL_FORWARD"] = "Major";
         var folders = spec.InstalledCopyOnly ? [NodeModulesBin] : SearchFolders().ToArray();
         foreach (var name in spec.Executables)
         {
-            if (FindProgram(name, folders) is { } executable) return new ServerLaunch(executable, spec.Args, environment, spec.PlainUris);
+            if (FindProgram(name, folders) is { } executable) return new ServerLaunch(executable, spec.Args, environment, spec.PlainUris, spec.InitializationOptions);
         }
         return null;
     }
@@ -461,6 +463,7 @@ public sealed class LanguageClient(Action<Action> post)
             ["clientInfo"] = new JsonObject { ["name"] = "CodeForge" },
             ["capabilities"] = capabilities,
         };
+        if (launch.InitializationOptions != null) parameters["initializationOptions"] = JsonNode.Parse(launch.InitializationOptions);
         var id = nextId++;
         pending[id] = result =>
         {
