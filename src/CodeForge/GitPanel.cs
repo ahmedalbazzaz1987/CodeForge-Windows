@@ -274,7 +274,8 @@ public sealed class GitPanel : DockPanel
         var text = message.Text.Trim();
         if (text.Length == 0)
         {
-            message.Focus();
+            // After the menu closes (it gives focus back to the editor), and once the tab is shown.
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () => { message.Focus(); Keyboard.Focus(message); });
             Status("Enter a commit message first");
             return;
         }

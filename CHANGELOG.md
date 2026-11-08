@@ -16,6 +16,7 @@
   Library.
 - **Code Snippets Manager** (Tools, Ctrl+Alt+B): add, change and delete the snippets of each language; your changes
   are saved and used by Tab, the Toolbox and the completion list. Restore Built-in Snippets brings the originals back.
+- Git ▸ Commit All without a message now puts the caret in the commit message box (it stayed in the editor).
 
 ## 0.6.1
 
