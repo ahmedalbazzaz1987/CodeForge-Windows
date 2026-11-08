@@ -194,7 +194,8 @@ public sealed class EditorDocument
         Editor.TextArea.Caret.Location = new TextLocation(line, col);
         Editor.ScrollTo(line, col);
         Editor.TextArea.Focus();
-        Editor.Select(documentLine.Offset, 0);
+        // Keep the column: Go To Definition lands on the name, not at the start of its line.
+        Editor.Select(documentLine.Offset + col - 1, 0);
     }
 
     public void SetDiagnostics(IEnumerable<Diagnostic> list) => diagnostics.Set(list);
