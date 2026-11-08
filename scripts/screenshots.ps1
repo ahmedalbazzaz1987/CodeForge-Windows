@@ -150,6 +150,13 @@ $text = Report "27-git-changes" @{ CF_OPEN = "$repo"; CF_ACTIONS = "git,message:
 if ($text -notmatch "Committed: First commit") { $failed += "Git commit from Git Changes" }
 if ((git -C $repo log --oneline) -notmatch "First commit") { $failed += "Git commit didn't happen" }
 
+# Class View reads the project's types and members; Server Explorer runs SQL on a new SQLite file.
+$text = Report "28-class-view" @{ CF_OPEN = "$refactor;$refactor\Program.vb"; CF_ACTIONS = "classview,dump"; CF_ACTION_GAP = "4" }
+if ($text -notmatch "SYMBOLS: .*Program.*Main" -or $text -notmatch "SYMBOLS: .*Square") { $failed += "Class View"; Write-Host $text }
+$db = "$work\Shop.db"
+$text = Report "29-server-explorer" @{ CF_OPEN = "$refactor"; CF_ACTIONS = "sqlite:$db,query:CREATE TABLE products (name TEXT),query:INSERT INTO products (name) VALUES ('Coffee'),query:SELECT * FROM products,dump"; CF_ACTION_GAP = "3" }
+if ($text -notmatch "QUERY: Query .*1 row") { $failed += "Server Explorer query"; Write-Host $text }
+
 if (Test-Path "$env:APPDATA\CodeForge\errors.log") { Get-Content "$env:APPDATA\CodeForge\errors.log" }
 Get-ChildItem $work -Filter errors.log -Recurse | ForEach-Object { Write-Host "== $($_.FullName)"; Get-Content $_.FullName }
 if ($failed.Count -gt 0) { throw "Screenshots failed: $($failed -join ', ')" }

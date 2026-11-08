@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.0
+
+**Class View, Object Browser, Server Explorer, more templates and a Code Snippets Manager**, like the Mac version.
+
+- **Class View** (View ▸ Class View, Ctrl+Shift+C), a tab beside Solution Explorer: the project's namespaces, classes,
+  modules, structures, interfaces and enums with their members, read from the source files of VB.NET, C#, F#, Python,
+  JavaScript, TypeScript, Java, Kotlin, Go, Rust, C, C++, Swift and PHP. Search it; double-click to go to a member.
+- **Object Browser** (Ctrl+Alt+J): every type, its members, and the selected one's declaration.
+- **Server Explorer** (Ctrl+Alt+S): connect to a SQLite file (opened with the SQLite that comes with Windows, nothing to
+  install), SQL Server including LocalDB (through sqlcmd), PostgreSQL or MySQL. See tables, views and columns;
+  double-click a table for its rows in the new **Query Results** tab; Tools ▸ New Query and Execute Query
+  (Ctrl+Shift+E) run SQL. Passwords are asked when you connect and never saved.
+- **New project templates**: C, C++, Go, Rust, Java, TypeScript, Empty Project, NUnit Test Project and Razor Class
+  Library.
+- **Code Snippets Manager** (Tools, Ctrl+Alt+B): add, change and delete the snippets of each language; your changes
+  are saved and used by Tab, the Toolbox and the completion list. Restore Built-in Snippets brings the originals back.
+
 ## 0.6.1
 
 Fixes from testing 0.6.0 on Windows.

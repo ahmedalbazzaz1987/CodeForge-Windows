@@ -1,21 +1,97 @@
 namespace CodeForge.Core;
 
 /// <summary>A code snippet: type its shortcut and press Tab, as in Visual Studio. $0 marks where the cursor goes.</summary>
-public sealed record CodeSnippet(string Shortcut, string Title, string LanguageId, string Body)
+/// <param name="Id">Stays the same when the shortcut changes; built-ins use "language.shortcut".</param>
+public sealed record CodeSnippet(string Shortcut, string Title, string LanguageId, string Body, string? Id = null)
 {
     public ToolboxItem ToolboxItem => new(Title, "\uE8C8", Body);
+    public string Key => Id ?? $"{LanguageId}.{Shortcut}";
+}
+
+/// <summary>
+/// The built-in snippets plus the user's own (Tools ▸ Code Snippets Manager), saved as JSON. A user snippet with a
+/// built-in's key replaces it; deleted built-ins are remembered so they stay deleted.
+/// </summary>
+public sealed class SnippetLibrary
+{
+    public List<CodeSnippet> User { get; } = [];
+    public HashSet<string> Hidden { get; } = [];
+
+    public IReadOnlyList<CodeSnippet> All
+    {
+        get
+        {
+            var replaced = User.Select(s => s.Key).ToHashSet();
+            return [.. Snippets.BuiltIn.Where(s => !replaced.Contains(s.Key) && !Hidden.Contains(s.Key)), .. User];
+        }
+    }
+
+    public static bool IsBuiltIn(CodeSnippet snippet) => Snippets.BuiltIn.Any(s => s.Key == snippet.Key);
+
+    /// <summary>Adds or replaces a snippet (a changed built-in is kept as a user copy with the same key).</summary>
+    public void Save(CodeSnippet snippet)
+    {
+        var copy = snippet.Id == null ? snippet with { Id = snippet.Key } : snippet;
+        var index = User.FindIndex(s => s.Key == copy.Key);
+        if (index >= 0) User[index] = copy; else User.Add(copy);
+    }
+
+    public void Delete(CodeSnippet snippet)
+    {
+        User.RemoveAll(s => s.Key == snippet.Key);
+        if (IsBuiltIn(snippet)) Hidden.Add(snippet.Key);
+    }
+
+    /// <summary>Brings back the built-in snippets of a language (deleted or changed), keeping the user's new ones.</summary>
+    public void RestoreBuiltIns(string languageId)
+    {
+        foreach (var builtIn in Snippets.BuiltIn.Where(s => s.LanguageId == languageId))
+        {
+            Hidden.Remove(builtIn.Key);
+            User.RemoveAll(s => s.Key == builtIn.Key);
+        }
+    }
+
+    private sealed record Stored(List<CodeSnippet> Snippets, List<string> Hidden);
+
+    public static SnippetLibrary Load(string path)
+    {
+        var library = new SnippetLibrary();
+        try
+        {
+            if (File.Exists(path) && System.Text.Json.JsonSerializer.Deserialize<Stored>(File.ReadAllText(path)) is { } stored)
+            {
+                library.User.AddRange(stored.Snippets ?? []);
+                foreach (var key in stored.Hidden ?? []) library.Hidden.Add(key);
+            }
+        }
+        catch (Exception) { }
+        return library;
+    }
+
+    public void Write(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(new Stored(User, [.. Hidden.Order()]),
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    }
 }
 
 /// <summary>The built-in code snippets, the same set as the Mac version.</summary>
 public static class Snippets
 {
+    /// <summary>The snippets in use: set by the app to the user's library.</summary>
+    public static SnippetLibrary Library { get; set; } = new();
+
+    public static IReadOnlyList<CodeSnippet> All => Library.All;
+
     public static IEnumerable<CodeSnippet> ForLanguage(string languageId) => All.Where(s => s.LanguageId == languageId);
 
     /// <summary>The snippet for a shortcut typed before Tab. VB.NET's shortcuts ignore case, like the language.</summary>
     public static CodeSnippet? Find(string languageId, string shortcut) =>
         All.FirstOrDefault(s => s.LanguageId == languageId && s.Shortcut.Equals(shortcut, languageId == "vb" ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
 
-    public static readonly IReadOnlyList<CodeSnippet> All =
+    public static readonly IReadOnlyList<CodeSnippet> BuiltIn =
     [
         // vb
         new("Sub", "Sub procedure", "vb", "Public Sub $0MethodName()\n    \nEnd Sub"),

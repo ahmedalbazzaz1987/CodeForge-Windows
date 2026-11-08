@@ -121,6 +121,12 @@ public class TemplateTests
             var folder = ProjectTemplates.Create(ProjectTemplates.All.First(t => t.Id == "node"), "Hello App", location);
             Assert.Contains("\"name\": \"HelloApp\"", File.ReadAllText(Path.Combine(folder, "package.json")));
             Assert.Throws<IOException>(() => ProjectTemplates.Create(ProjectTemplates.All.First(t => t.Id == "node"), "Hello App", location));
+            // The Mac version's other languages: every file template writes its main file.
+            foreach (var template in ProjectTemplates.General)
+                Assert.True(File.Exists(Path.Combine(ProjectTemplates.Create(template, "T " + template.Id, location), template.MainFile)), template.Id);
+            Assert.Contains("name = \"t_rust\"", File.ReadAllText(Path.Combine(location, "T rust", "Cargo.toml")));
+            Assert.Equal("my_app_2", ProjectTemplates.CrateName("My App 2"));
+            Assert.Equal("app_3d", ProjectTemplates.CrateName("3D"));
         }
         finally { Directory.Delete(location, true); }
     }

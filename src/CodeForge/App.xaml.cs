@@ -12,6 +12,7 @@ public partial class App : Application
         base.OnStartup(e);
         DispatcherUnhandledException += OnUnhandledException;
         PathVariable.Refresh();
+        SnippetsManager.Load();
         // The form designer and Properties window use Windows Forms; give them the current Windows look.
         System.Windows.Forms.Application.EnableVisualStyles();
         System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);

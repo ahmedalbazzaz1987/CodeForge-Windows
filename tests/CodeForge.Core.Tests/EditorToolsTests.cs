@@ -94,4 +94,27 @@ public class EditorToolsTests
         Assert.Equal(Snippets.All.Count, Snippets.All.Select(s => s.LanguageId + s.Shortcut).Distinct().Count());
         Assert.True(Snippets.All.Count > 60);
     }
+
+    [Fact]
+    public void UserSnippetsAddToAndReplaceBuiltIns()
+    {
+        var library = new SnippetLibrary();
+        var builtIn = Snippets.BuiltIn.First(s => s.LanguageId == "python" && s.Shortcut == "class");
+        library.Save(builtIn with { Body = "class $0Thing:\n    pass" });
+        library.Save(new CodeSnippet("hello", "Hello", "python", "print('hello')", Id: "mine"));
+        library.Delete(Snippets.BuiltIn.First(s => s.LanguageId == "python" && s.Shortcut != "class"));
+        var python = library.All.Where(s => s.LanguageId == "python").ToList();
+        Assert.Equal("class $0Thing:\n    pass", python.Single(s => s.Shortcut == "class").Body);
+        Assert.Contains(python, s => s.Shortcut == "hello");
+        Assert.Equal(Snippets.BuiltIn.Count(s => s.LanguageId == "python"), python.Count);
+
+        var file = Path.Combine(Directory.CreateTempSubdirectory("cf-snippets").FullName, "snippets.json");
+        library.Write(file);
+        var loaded = SnippetLibrary.Load(file);
+        Assert.Equal(library.All.Count, loaded.All.Count);
+        loaded.RestoreBuiltIns("python");
+        Assert.Equal(Snippets.BuiltIn.Count(s => s.LanguageId == "python") + 1, loaded.All.Count(s => s.LanguageId == "python"));
+        Assert.Empty(SnippetLibrary.Load(file + ".missing").User);
+    }
 }
+

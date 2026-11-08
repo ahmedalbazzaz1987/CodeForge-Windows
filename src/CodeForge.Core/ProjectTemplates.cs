@@ -49,6 +49,8 @@ public static class ProjectTemplates
         DotNet("xunit-cs", "xUnit Test Project (C#)", "Unit tests; run them with Test ▸ Run All Tests.", "C#  Test", "UnitTest1.cs", "xunit"),
         DotNet("xunit-vb", "xUnit Test Project (VB.NET)", "Visual Basic unit tests.", "VB.NET  Test", "UnitTest1.vb", "xunit -lang VB"),
         DotNet("mstest", "MSTest Test Project", "Unit tests with MSTest.", "C#  Test", "Test1.cs", "mstest"),
+        DotNet("nunit", "NUnit Test Project", "Unit tests with NUnit.", "C#  Test", "UnitTest1.cs", "nunit"),
+        DotNet("razorclasslib", "Razor Class Library", "Razor components and pages to share between web apps.", "C#  Razor  Library", "Component1.razor", "razorclasslib"),
         DotNet("fs-console", "Console App (F#)", "An F# command-line program.", "F#  Console", "Program.fs", "console -lang F#"),
     ];
 
@@ -74,6 +76,45 @@ public static class ProjectTemplates
                 ["style.css"] = "body {\n    font-family: \"Segoe UI\", sans-serif;\n    margin: 40px;\n}\n",
                 ["script.js"] = "console.log(\"Ready\");\n",
             }),
+        // The same as the Mac version's. compile_flags.txt tells clangd (IntelliSense) the language standard.
+        new("c", "C Console App", "A C17 program built with clang or gcc.", "C", "General", "main.c",
+            Files: new Dictionary<string, string>
+            {
+                ["compile_flags.txt"] = "-std=c17\n-Wall\n",
+                ["main.c"] = "#include <stdio.h>\n\nint main(void) {\n    printf(\"Hello from {{name}}!\\n\");\n    return 0;\n}\n",
+            }),
+        new("cpp", "C++ Console App", "A C++20 program built with clang++ or g++.", "C++", "General", "main.cpp",
+            Files: new Dictionary<string, string>
+            {
+                ["compile_flags.txt"] = "-std=c++20\n-Wall\n",
+                ["main.cpp"] = "#include <iostream>\n#include <string>\n\nint main() {\n    std::string name = \"{{name}}\";\n    std::cout << \"Hello from \" << name << \"!\" << std::endl;\n    return 0;\n}\n",
+            }),
+        new("typescript", "TypeScript Console App", "A TypeScript program for Node.js.", "TypeScript  Node.js", "General", "index.ts",
+            Files: new Dictionary<string, string>
+            {
+                ["index.ts"] = "function greet(name: string): string {\n    return `Hello from ${name}!`;\n}\n\nconsole.log(greet(\"{{name}}\"));\n",
+                [".gitignore"] = "node_modules/\n",
+            }),
+        new("go", "Go Console App", "A Go module, run with go run.", "Go", "General", "main.go",
+            Files: new Dictionary<string, string>
+            {
+                ["go.mod"] = "module {{ident}}\n\ngo 1.22\n",
+                ["main.go"] = "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"Hello from {{name}}!\")\n}\n",
+            }),
+        new("rust", "Rust Console App", "A Cargo project, run with cargo run.", "Rust", "General", "src/main.rs",
+            Files: new Dictionary<string, string>
+            {
+                ["Cargo.toml"] = "[package]\nname = \"{{crate}}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+                ["src/main.rs"] = "fn main() {\n    println!(\"Hello from {{name}}!\");\n}\n",
+                [".gitignore"] = "target/\n",
+            }),
+        new("java", "Java Console App", "A single-file Java program.", "Java", "General", "Main.java",
+            Files: new Dictionary<string, string>
+            {
+                ["Main.java"] = "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Hello from {{name}}!\");\n    }\n}\n",
+            }),
+        new("empty", "Empty Project", "A folder with a README, ready for any language.", "Any", "General", "README.md",
+            Files: new Dictionary<string, string> { ["README.md"] = "# {{name}}\n" }),
     ];
 
     public static IReadOnlyList<ProjectTemplate> All { get; } = [.. Windows, .. DotNetTemplates, .. General];
@@ -86,6 +127,17 @@ public static class ProjectTemplates
         var result = builder.ToString();
         if (result.Length == 0) return "App";
         return char.IsDigit(result[0]) ? "_" + result : result;
+    }
+
+    /// <summary>Cargo wants lowercase snake_case ASCII names: "My App" → "my_app".</summary>
+    public static string CrateName(string name)
+    {
+        var builder = new StringBuilder();
+        foreach (var c in name.ToLowerInvariant())
+            builder.Append(char.IsAsciiLetterOrDigit(c) ? c : '_');
+        var result = builder.ToString().Trim('_');
+        while (result.Contains("__")) result = result.Replace("__", "_");
+        return result.Length == 0 || char.IsDigit(result[0]) ? "app" + (result.Length > 0 ? "_" + result : "") : result;
     }
 
     public static string? CreationCommand(ProjectTemplate template, string name) =>
@@ -101,7 +153,7 @@ public static class ProjectTemplates
         {
             var target = Path.Combine(folder, path);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.WriteAllText(target, contents.Replace("{{name}}", name).Replace("{{ident}}", Identifier(name)));
+            File.WriteAllText(target, contents.Replace("{{name}}", name).Replace("{{ident}}", Identifier(name)).Replace("{{crate}}", CrateName(name)));
         }
         return folder;
     }

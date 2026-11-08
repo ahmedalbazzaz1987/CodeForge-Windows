@@ -36,6 +36,10 @@ public partial class MainWindow : Window
     private List<Diagnostic> diagnostics = [];
     private readonly IntelliSense intelliSense;
     private readonly GitPanel gitPanel;
+    private readonly ClassViewPanel classView;
+    private readonly ServerExplorerPanel serverExplorer;
+    /// <summary>SQL editors opened with New Query, and the connection each runs on.</summary>
+    private readonly Dictionary<EditorDocument, DataConnection> queryConnections = [];
 
     public string? Workspace => workspace;
     public EditorDocument? Current => (DocumentTabs.SelectedItem as TabItem)?.Tag as EditorDocument;
@@ -87,7 +91,35 @@ public partial class MainWindow : Window
             Owner = () => this,
         };
         GitTab.Content = gitPanel;
-        SideTabs.SelectionChanged += (_, e) => { if (e.Source == SideTabs && SideTabs.SelectedItem == GitTab) gitPanel.Refresh(); };
+        classView = new ClassViewPanel { Folder = () => workspace, Open = (path, line) => OpenPath(path, line) };
+        ClassViewTab.Content = classView;
+        serverExplorer = new ServerExplorerPanel
+        {
+            NewQueryDocument = (title, text) =>
+            {
+                var connection = serverExplorer!.Selected;
+                ShowText(title, text, "sql");
+                if (Current is { } query)
+                {
+                    query.Editor.IsReadOnly = false;
+                    if (connection != null) queryConnections[query] = connection;
+                }
+            },
+            ShowResult = (title, result, error) =>
+            {
+                QueryResultsView.Show(QueryGrid, QuerySummary, title, result, error);
+                ShowPanel(QueryResultsTab);
+            },
+            Status = text => StatusText.Text = text,
+            Owner = () => this,
+        };
+        ServerTab.Content = serverExplorer;
+        SideTabs.SelectionChanged += (_, e) =>
+        {
+            if (e.Source != SideTabs) return;
+            if (SideTabs.SelectedItem == GitTab) gitPanel.Refresh();
+            if (SideTabs.SelectedItem == ClassViewTab) classView.Refresh();
+        };
         StatusBranch.Cursor = Cursors.Hand;
         StatusBranch.ToolTip = "Git Changes";
         StatusBranch.MouseLeftButtonUp += (_, _) => ShowGitChanges();
@@ -188,6 +220,10 @@ public partial class MainWindow : Window
             Item("Solution _Explorer", () => SetPane(ExplorerPane, true), "Ctrl+Alt+L"),
             Item("_Properties Window", () => SetPane(ExplorerPane, true), "F4"),
             Item("Tool_box", () => SetPane(ToolboxPane, true), "Ctrl+Alt+X"),
+            Item("Cl_ass View", ShowClassView, "Ctrl+Shift+C"),
+            Item("Object _Browser", ShowObjectBrowser, "Ctrl+Alt+J"),
+            Item("Ser_ver Explorer", ShowServerExplorer, "Ctrl+Alt+S"),
+            Item("_Git Changes", ShowGitChanges),
             Item("_Output", () => ShowPanel(OutputTab), "Ctrl+Alt+O"),
             Item("Error L_ist", () => ShowPanel(ErrorsTab), "Ctrl+Alt+E"),
             Item("Task _List", ShowTaskList, "Ctrl+Alt+K"),
@@ -252,6 +288,11 @@ public partial class MainWindow : Window
             Item("_Terminal", () => ShowPanel(TerminalTab)),
             Item("Open Folder in File _Explorer", () => { if (workspace != null) Process.Start("explorer.exe", workspace); }, "", HasFolder),
             Line(),
+            Item("_Connect to Database…", () => { ShowServerExplorer(); serverExplorer.AddConnection(); }),
+            Item("New _Query", () => serverExplorer.NewQuery()),
+            Item("E_xecute Query", ExecuteQuery, "Ctrl+Shift+E", HasDocument),
+            Line(),
+            Item("Code _Snippets Manager…", () => SnippetsManager.Show(this, Current?.Language.Id, UpdateToolbox), "Ctrl+Alt+B"),
             Item("_Options…", ShowOptions));
 
         Menu("_Window",
@@ -712,6 +753,7 @@ public partial class MainWindow : Window
         intelliSense.Attach(document);
         document.Saved += UpdateChrome;
         document.Saved += gitPanel.Refresh;
+        document.Saved += () => { if (SideTabs.SelectedItem == ClassViewTab) classView.Refresh(); };
         UpdateTab(document);
         document.SetDiagnostics(DiagnosticsFor(document));
         if (document.Path != null && settings.Bookmarks.TryGetValue(document.Path, out var saved)) document.SetBookmarks(saved);
@@ -865,6 +907,7 @@ public partial class MainWindow : Window
     {
         StoreBookmarks(document);
         intelliSense.Detach(document);
+        queryConnections.Remove(document);
         var index = documents.IndexOf(document);
         documents.Remove(document);
         document.Detach();
@@ -1910,6 +1953,42 @@ public partial class MainWindow : Window
     private void UpdateBranch()
     {
         gitPanel.Refresh();
+        if (SideTabs.SelectedItem == ClassViewTab) classView.Refresh();
+    }
+
+    public void ShowClassView()
+    {
+        if (ExplorerPane.Visibility != Visibility.Visible) SetPane(ExplorerPane, true);
+        SideTabs.SelectedItem = ClassViewTab;
+        classView.Refresh();
+    }
+
+    public void ShowServerExplorer()
+    {
+        if (ExplorerPane.Visibility != Visibility.Visible) SetPane(ExplorerPane, true);
+        SideTabs.SelectedItem = ServerTab;
+    }
+
+    /// <summary>Runs the selected SQL (or the whole editor) on the query's connection, or the one selected in Server Explorer.</summary>
+    private void ExecuteQuery()
+    {
+        if (Current is not { } document) return;
+        var connection = queryConnections.GetValueOrDefault(document) ?? serverExplorer.Selected;
+        if (connection == null)
+        {
+            ShowServerExplorer();
+            StatusText.Text = "Select a connection in Server Explorer first";
+            return;
+        }
+        var sql = document.Editor.SelectionLength > 0 ? document.Editor.SelectedText : document.Editor.Text;
+        if (sql.Trim().Length == 0) return;
+        serverExplorer.Run(connection, sql);
+    }
+
+    private void ShowObjectBrowser()
+    {
+        var symbols = workspace == null ? new List<CodeSymbol>() : SymbolParser.Index(workspace);
+        ObjectBrowser.Show(this, symbols, (path, line) => OpenPath(path, line));
     }
 
     public void ShowGitChanges()
@@ -1985,6 +2064,7 @@ public partial class MainWindow : Window
                 File.AppendAllText(Environment.GetEnvironmentVariable("CF_REPORT") ?? "report.txt",
                     $"STATUS: {StatusText.Text}\nTABS: {string.Join(",", documents.Select(d => d.DisplayName))}\nOUTPUT:\n{OutputText.Text}\n" +
                     $"SERVER: {(Current != null ? intelliSense.ServerName(Current) : null)}\n" +
+                    $"QUERY: {QuerySummary.Text}\nSYMBOLS: {string.Join(",", classView.Symbols.Select(x => x.Name))}\n" +
                     $"ERRORS:\n{string.Join("\n", (ErrorList.ItemsSource as IEnumerable<ErrorRow> ?? Enumerable.Empty<ErrorRow>()).Select(r => $"{r.FileName}:{r.Line}: {r.Message}"))}\n" +
                     $"FINDRESULTS:\n{string.Join("\n", (FindResults.ItemsSource as IEnumerable<LocationRow> ?? Enumerable.Empty<LocationRow>()).Select(r => $"{Path.GetFileName(r.FullPath)}:{r.Line}"))}\n");
                 break;
@@ -1995,6 +2075,9 @@ public partial class MainWindow : Window
             case "extract": intelliSense.ExtractMethodFromSelection(Current); break;
             case "quickactions": intelliSense.ShowQuickActions(Current); break;
             case "git": ShowGitChanges(); break;
+            case "classview": ShowClassView(); break;
+            case var a when a.StartsWith("sqlite:"): ShowServerExplorer(); serverExplorer.AddSqlite(a[7..]); break;
+            case var a when a.StartsWith("query:") && serverExplorer.Selected is { } connection: serverExplorer.Run(connection, a[6..]); break;
             case "commit": gitPanel.Commit(); break;
             case var a when a.StartsWith("message:"): gitPanel.Message = a[8..]; break;
             case var a when a.StartsWith("lines:") && Current is { } lined:
