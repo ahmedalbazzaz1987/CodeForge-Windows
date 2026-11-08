@@ -127,7 +127,7 @@ $refactor = "$work\Refactor"
 New-Item -ItemType Directory -Force $refactor | Out-Null
 Set-Content "$refactor\Program.vb" "Module Program`r`n    Sub Main()`r`n        Dim price As Double = 9.5`r`n        Dim count = 3`r`n        Dim total As Double = price * count`r`n        total = total * 1.2`r`n        Console.WriteLine(total)`r`n    End Sub`r`nEnd Module`r`n"
 $text = Report "24-extract-method" @{ CF_OPEN = "$refactor;$refactor\Program.vb"; CF_ACTIONS = "lines:5-6,extract,text"; CF_DELAY = "2" }
-if ($text -notmatch "Private Function NewMethod\(price As Double, count As Integer\) As Double") { $failed += "Extract Method (VB)" }
+if ($text -notmatch "Private Function NewMethod\(price As Double, count As Integer\) As Double") { $failed += "Extract Method (VB)"; Write-Host $text }
 Set-Content "$refactor\Calc.cs" "static int Square(int x) => x * x;`r`nConsole.WriteLine(Square(3) + Square(4)); // Square stays in comments`r`n"
 $env:CF_ANSWER = "Cube"
 $text = Report "25-rename" @{ CF_OPEN = "$refactor;$refactor\Calc.cs"; CF_ACTIONS = "caret:static int Squ,rename,text" }
@@ -136,7 +136,7 @@ if ($text -notmatch "Cube\(3\) \+ Cube\(4\)" -or $text -notmatch "// Square stay
 $env:CF_ANSWER = "Welcomer"
 $text = Report "26-rename-jedi" @{ CF_OPEN = "$sense;$sense\main.py"; CF_ACTIONS = "caret:class Gree,rename,text"; CF_ACTION_GAP = "5" }
 Remove-Item Env:CF_ANSWER
-if ($text -notmatch "class Welcomer" -or $text -notmatch "g = Welcomer\(\)") { $failed += "Rename with Jedi" }
+if ($text -notmatch "class Welcomer" -or $text -notmatch "g = Welcomer\(\)") { $failed += "Rename with Jedi"; Write-Host $text }
 # Git Changes: commit everything in a new repository.
 $repo = "$work\GitDemo"
 New-Item -ItemType Directory -Force $repo | Out-Null

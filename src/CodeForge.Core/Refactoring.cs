@@ -31,6 +31,10 @@ public static class ExtractMethod
         var flavor = Flavor.For(languageId) ?? throw new Failure("Extract Method works for VB.NET, C#, Python, JavaScript, TypeScript and Swift.");
         var language = Languages.ById(languageId);
         name ??= DefaultName(languageId);
+        // Windows files end lines with \r\n: the selection's offsets count the \r characters that are about to go.
+        var selectionEnd = selectionStart + selectionLength;
+        selectionStart -= text[..Math.Min(selectionStart, text.Length)].Count(c => c == '\r');
+        selectionLength = selectionEnd - text[..Math.Min(selectionEnd, text.Length)].Count(c => c == '\r') - selectionStart;
         text = text.Replace("\r\n", "\n");
         var lines = text.Split('\n');
         var masked = Mask(text, language).Split('\n');

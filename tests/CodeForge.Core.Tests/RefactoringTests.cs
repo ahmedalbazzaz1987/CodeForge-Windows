@@ -51,6 +51,13 @@ public class RefactoringTests
         var objects = "Module M\n    Sub Main()\n        Dim cart As New List(Of String)\n        Dim a, b As Integer\n        cart.Add(\"x\")\n        Console.WriteLine(a + b)\n    End Sub\nEnd Module";
         Assert.Contains("Private Sub NewMethod(cart As List(Of String), a As Integer, b As Integer)", Extract(objects, 5, 6, "vb").Text);
 
+        // Offsets in a file with Windows line endings.
+        var windows = code.Replace("\n", "\r\n");
+        var lines = windows.Split("\r\n");
+        var start = lines.Take(4).Sum(l => l.Length + 2);
+        var end = lines.Take(6).Sum(l => l.Length + 2) - 2;
+        Assert.Equal(result.Text, ExtractMethod.Extract(windows, start, end - start, "vb").Text);
+
         // A Sub when nothing is used afterwards.
         var sub = Extract(code, 7, 7, "vb").Text;
         Assert.Contains("        NewMethod(total)\n", sub);
