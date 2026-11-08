@@ -34,13 +34,16 @@ jobs:
       - name: Debuggers for the native debugging checks
         shell: pwsh
         run: |
-          go install github.com/go-delve/delve/cmd/dlv@latest
-          C:\msys64\usr\bin\pacman.exe -S --noconfirm --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gdb | Out-Null
-          "C:\msys64\ucrt64\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          # Delve 1.24 still supports the runner's Go 1.24; newer releases need Go 1.25.
+          go install github.com/go-delve/delve/cmd/dlv@v1.24.2
+          C:\msys64\usr\bin\pacman.exe -S --noconfirm --needed mingw-w64-ucrt-x86_64-gdb | Out-Null
 
       - name: Screenshots
         shell: pwsh
-        run: scripts/screenshots.ps1 -App publish/CodeForge/CodeForge.exe -Out screenshots
+        # GDB from MSYS2 goes last on PATH: its folder also has a Python without pip.
+        run: |
+          $env:PATH = "$env:PATH;C:\msys64\ucrt64\bin"
+          scripts/screenshots.ps1 -App publish/CodeForge/CodeForge.exe -Out screenshots
 
       - uses: actions/upload-artifact@v4
         if: always()
