@@ -96,12 +96,14 @@ public class LanguageServerTests
             var bin = Path.Combine(root, "bin");
             Directory.CreateDirectory(bin);
             Directory.CreateDirectory(Path.Combine(install, "dotnet-tools"));
-            File.WriteAllText(Path.Combine(install, "dotnet-tools", "csharp-ls"), "");
-            File.WriteAllText(Path.Combine(bin, "gopls"), "");
-            File.WriteAllText(Path.Combine(bin, "tsc"), "");
+            // On Windows a server must be an .exe, .cmd or .bat.
+            var exe = OperatingSystem.IsWindows() ? ".exe" : "";
+            File.WriteAllText(Path.Combine(install, "dotnet-tools", "csharp-ls" + exe), "");
+            File.WriteAllText(Path.Combine(bin, "gopls" + exe), "");
+            File.WriteAllText(Path.Combine(bin, "tsc" + exe), "");
             var locator = new LanguageServerLocator(install, path: bin, home: root, localAppData: root);
             Assert.Equal("csharp-ls", locator.Find("csharp")?.Spec.Id);
-            Assert.Equal(Path.Combine(bin, "gopls"), locator.Find("go")?.Launch.Executable);
+            Assert.Equal(Path.Combine(bin, "gopls" + exe), locator.Find("go")?.Launch.Executable);
             // TypeScript's server is only taken from CodeForge's own copy: an older tsc on PATH has none.
             Assert.Null(locator.Find("typescript"));
             Assert.Null(locator.Find("vb"));
@@ -122,7 +124,7 @@ public class LanguageServerTests
         {
             var bin = Path.Combine(root, "bin");
             Directory.CreateDirectory(bin);
-            File.WriteAllText(Path.Combine(bin, "python"), "");
+            File.WriteAllText(Path.Combine(bin, OperatingSystem.IsWindows() ? "python.exe" : "python"), "");
             var locator = new LanguageServerLocator(Path.Combine(root, "servers"), path: bin, home: root, localAppData: root);
             var jedi = LanguageServerSpecs.All.First(s => s.Id == "jedi");
             Assert.Null(locator.Find("python"));
