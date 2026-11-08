@@ -62,7 +62,7 @@ public sealed class HtmlDesignHost : DockPanel
         foreach (var mode in Enum.GetValues<Mode>())
         {
             var button = new Button { Content = mode.ToString(), Tag = mode, Padding = new Thickness(10, 1, 10, 1), Margin = new Thickness(0, 2, 4, 2), BorderThickness = new Thickness(0) };
-            button.SetResourceReference(BackgroundProperty, "ChromeBrush");
+            button.SetResourceReference(Control.BackgroundProperty, "ChromeBrush");
             button.Click += (_, _) => SetMode(mode);
             buttons.Add(button);
             bar.Children.Add(button);
@@ -83,7 +83,7 @@ public sealed class HtmlDesignHost : DockPanel
         Grid.SetRow(design, 0);
         Grid.SetRow(splitter, 1);
         Grid.SetRow(document.Editor, 2);
-        splitter.SetResourceReference(BackgroundProperty, "BorderBrush");
+        splitter.SetResourceReference(Control.BackgroundProperty, "BorderBrush");
         area.Children.Add(design);
         area.Children.Add(splitter);
         area.Children.Add(document.Editor);
@@ -107,7 +107,7 @@ public sealed class HtmlDesignHost : DockPanel
         {
             var selected = (Mode)button.Tag == mode;
             button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
-            button.SetResourceReference(ForegroundProperty, selected ? "AccentBrush" : "SubtleTextBrush");
+            button.SetResourceReference(Control.ForegroundProperty, selected ? "AccentBrush" : "SubtleTextBrush");
         }
         if (design) Reload();
         if (mode == Mode.Source) Dispatcher.BeginInvoke(() => document.Editor.TextArea.Focus(), DispatcherPriority.Input);
