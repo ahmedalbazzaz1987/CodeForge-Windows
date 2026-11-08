@@ -495,7 +495,13 @@ public sealed class IntelliSense
             Flush(document);
             session.Rename(word.Start, newName, edits =>
             {
-                if (edits.Count == 0) { Status($"{ServerName(document)} can't rename “{word.Text}”"); return; }
+                if (edits.Count == 0)
+                {
+                    // Jedi, for one, won't rename in a file with syntax errors.
+                    var errors = live.TryGetValue(document.Path ?? "", out var list) && list.Any(d => d.Severity == Severity.Error);
+                    Status($"{ServerName(document)} couldn't rename “{word.Text}”" + (errors ? ": fix the errors in the file first" : ""));
+                    return;
+                }
                 var count = Apply(edits, "Rename");
                 SelectDocument(document);
                 Status($"Renamed “{word.Text}” to “{newName}”: {count} change{(count == 1 ? "" : "s")}");

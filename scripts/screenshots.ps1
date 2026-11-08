@@ -134,7 +134,9 @@ $text = Report "25-rename" @{ CF_OPEN = "$refactor;$refactor\Calc.cs"; CF_ACTION
 Remove-Item Env:CF_ANSWER
 if ($text -notmatch "Cube\(3\) \+ Cube\(4\)" -or $text -notmatch "// Square stays") { $failed += "Rename without a server" }
 $env:CF_ANSWER = "Welcomer"
-$text = Report "26-rename-jedi" @{ CF_OPEN = "$sense;$sense\main.py"; CF_ACTIONS = "caret:class Gree,rename,text"; CF_ACTION_GAP = "5" }
+# Jedi won't rename in a file with syntax errors, so this one has none.
+Set-Content "$sense\greeter.py" "class Greeter:`r`n    def greet(self, name):`r`n        return 'Hello ' + name`r`n`r`ng = Greeter()`r`n"
+$text = Report "26-rename-jedi" @{ CF_OPEN = "$sense;$sense\greeter.py"; CF_ACTIONS = "caret:class Gree,rename,text"; CF_ACTION_GAP = "5" }
 Remove-Item Env:CF_ANSWER
 if ($text -notmatch "class Welcomer" -or $text -notmatch "g = Welcomer\(\)") { $failed += "Rename with Jedi"; Write-Host $text }
 # Git Changes: commit everything in a new repository.
