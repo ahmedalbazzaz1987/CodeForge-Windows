@@ -118,7 +118,7 @@ public static class GitBlame
 
     /// <summary>The most recent change among some lines, for CodeLens on a method.</summary>
     public static GitBlameLine? Latest(Dictionary<int, GitBlameLine> blame, int first, int last) =>
-        Enumerable.Range(first, Math.Max(last - first + 1, 0)).Select(l => blame.GetValueOrDefault(l)).OfType<GitBlameLine>().MaxBy(b => b.Time);
+        Enumerable.Range(first, Math.Max(last - first + 1, 0)).Select(l => blame.GetValueOrDefault(l)).OfType<GitBlameLine>().MaxBy(b => b.IsUncommitted ? DateTimeOffset.MaxValue : b.Time);
 }
 
 public static class RelativeTime
@@ -227,3 +227,56 @@ public static class GitIdentity
         """;
 }
 
+
+/// <summary>
+/// CodeLens, as in Visual Studio: above (here, after) each type and member, how many times it's used in the project
+/// and who changed it last.
+/// </summary>
+public static class CodeLens
+{
+    private static readonly HashSet<SymbolKind> Shown =
+    [
+        SymbolKind.Class, SymbolKind.Module, SymbolKind.Structure, SymbolKind.Interface, SymbolKind.Enumeration,
+        SymbolKind.Method, SymbolKind.Function, SymbolKind.Constructor, SymbolKind.Property,
+    ];
+
+    /// <summary>Whole-word uses of a name outside strings and comments.</summary>
+    public static int CountWord(string text, string word, Language language, bool alreadyMasked = false)
+    {
+        var masked = alreadyMasked ? text : ExtractMethod.Mask(text, language);
+        var comparison = language.CaseInsensitive ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var count = 0;
+        for (var at = masked.IndexOf(word, comparison); at >= 0; at = masked.IndexOf(word, at + word.Length, comparison))
+        {
+            var before = at > 0 ? masked[at - 1] : ' ';
+            var after = at + word.Length < masked.Length ? masked[at + word.Length] : ' ';
+            if (!BasicIntelliSense.IsIdentifier(before) && !BasicIntelliSense.IsIdentifier(after)) count++;
+        }
+        return count;
+    }
+
+    /// <summary>The lens text by 1-based line: "3 references | Ahmed, 2 days ago".</summary>
+    /// <param name="uses">How many times a name appears in the project (its declaration included).</param>
+    public static Dictionary<int, string> Describe(IReadOnlyList<CodeSymbol> symbols, Func<string, int> uses, Dictionary<int, GitBlameLine>? blame, int lineCount)
+    {
+        var result = new Dictionary<int, string>();
+        var lines = symbols.Select(s => s.Line).Order().Distinct().ToList();
+        foreach (var symbol in symbols.Where(s => Shown.Contains(s.Kind)))
+        {
+            if (result.ContainsKey(symbol.Line)) continue;
+            // A constructor's name is its type's; its own uses would count the type's.
+            var references = symbol.Kind == SymbolKind.Constructor ? null : (int?)Math.Max(uses(symbol.Name) - 1, 0);
+            var parts = new List<string>();
+            if (references is { } n) parts.Add($"{n} reference{(n == 1 ? "" : "s")}");
+            if (blame != null)
+            {
+                var next = lines.FirstOrDefault(l => l > symbol.Line);
+                var last = symbol.IsType ? lineCount : (next == 0 ? lineCount : next - 1);
+                if (GitBlame.Latest(blame, symbol.Line, last) is { } change)
+                    parts.Add(change.IsUncommitted ? "not committed yet" : $"{change.Author}, {RelativeTime.Describe(change.Time)}");
+            }
+            if (parts.Count > 0) result[symbol.Line] = string.Join("  |  ", parts);
+        }
+        return result;
+    }
+}

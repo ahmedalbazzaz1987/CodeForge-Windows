@@ -25,6 +25,8 @@ public partial class MainWindow : Window
     private string? runFolder;
     private bool openedBrowser;
     private Action? afterRun;
+    /// <summary>The run is Run All Tests: its results go to Test Explorer.</summary>
+    private bool testRun;
     private string? pendingOpenFolder;
     private int untitledCount;
     private readonly NavigationHistory<Place> history = new();
@@ -223,6 +225,13 @@ public partial class MainWindow : Window
             Item("Cl_ass View", ShowClassView, "Ctrl+Shift+C"),
             Item("Object _Browser", ShowObjectBrowser, "Ctrl+Alt+J"),
             Item("Ser_ver Explorer", ShowServerExplorer, "Ctrl+Alt+S"),
+            Item("Show Code_Lens", () =>
+            {
+                settings.ShowCodeLens = !settings.ShowCodeLens;
+                settings.Save();
+                foreach (var open in documents) UpdateCodeLens(open);
+                StatusText.Text = settings.ShowCodeLens ? "CodeLens is on" : "CodeLens is off";
+            }),
             Item("_Git Changes", ShowGitChanges),
             Item("_Output", () => ShowPanel(OutputTab), "Ctrl+Alt+O"),
             Item("Error L_ist", () => ShowPanel(ErrorsTab), "Ctrl+Alt+E"),
@@ -282,7 +291,8 @@ public partial class MainWindow : Window
             Item("Set _Run Command…", EditRunCommand, "", HasFolder));
 
         Menu("_Test",
-            Item("Run _All Tests", RunAllTests, "Ctrl+R", () => !runner.IsRunning && HasFolder()));
+            Item("Run _All Tests", RunAllTests, "Ctrl+R", () => !runner.IsRunning && HasFolder()),
+            Item("Test _Explorer", () => ShowPanel(TestExplorerTab)));
 
         Menu("_Tools",
             Item("_Terminal", () => ShowPanel(TerminalTab)),
@@ -312,6 +322,11 @@ public partial class MainWindow : Window
     private void WireControls()
     {
         NewProjectButton.Click += (_, _) => NewProject();
+        RunTestsButton.Click += (_, _) => { if (!runner.IsRunning && workspace != null) RunAllTests(); };
+        OutputText.TextArea.TextView.LineTransformers.Add(new OutputColorizer());
+        OutputText.Options.EnableHyperlinks = false;
+        OutputText.TextArea.Caret.CaretBrush = Brushes.Transparent;
+        TestList.MouseDoubleClick += (_, _) => { if (TestList.SelectedItem is TestRow row) OpenTest(row.Result); };
         OpenButton.Click += (_, _) => OpenFolder();
         SaveAllButton.Click += (_, _) => SaveAll();
         BackButton.Click += (_, _) => NavigateBackward();
@@ -753,6 +768,8 @@ public partial class MainWindow : Window
         intelliSense.Attach(document);
         document.Saved += UpdateChrome;
         document.Saved += gitPanel.Refresh;
+        document.Saved += () => UpdateCodeLens(document);
+        UpdateCodeLens(document);
         document.Saved += () => { if (SideTabs.SelectedItem == ClassViewTab) classView.Refresh(); };
         UpdateTab(document);
         document.SetDiagnostics(DiagnosticsFor(document));
@@ -1470,6 +1487,8 @@ public partial class MainWindow : Window
             AppendOutput($"A required tool wasn't found. {hint}\n");
         diagnostics = DiagnosticParser.Parse(OutputText.Text);
         RefreshDiagnostics();
+        if (testRun) ShowTestResults(TestResults.Parse(OutputText.Text));
+        testRun = false;
         var errors = diagnostics.Count(d => d.Severity == Severity.Error);
         StatusText.Text = code == 0 ? $"Finished in {seconds:0.00}s" : errors > 0 ? $"Failed — {errors} error{(errors == 1 ? "" : "s")}" : $"Failed (exit code {ExitCodes.Describe(code)})";
         if (code != 0 && errors > 0) ShowPanel(ErrorsTab);
@@ -1492,9 +1511,8 @@ public partial class MainWindow : Window
         var lineStart = current.LastIndexOf('\n') + 1;
         if (text.Contains('\r') || (current.Length > 0 && current[^1] == '\r'))
         {
-            OutputText.Select(lineStart, current.Length - lineStart);
-            OutputText.SelectedText = ConsoleText.Rewrite(current[lineStart..], text);
-            OutputText.Select(OutputText.Text.Length, 0);
+            // Through the document: the read-only editor refuses edits to a selection.
+            OutputText.Document.Replace(lineStart, current.Length - lineStart, ConsoleText.Rewrite(current[lineStart..], text));
         }
         else OutputText.AppendText(text);
         if (OutputText.Text.Length > 2_000_000) OutputText.Text = OutputText.Text[^1_500_000..];
@@ -1561,7 +1579,33 @@ public partial class MainWindow : Window
             return;
         }
         SaveAll();
-        RunCommand(command, workspace, "Running tests…");
+        testRun = true;
+        TestSummary.Text = "Running tests…";
+        RunCommand(TestResults.Verbose(command), workspace, "Running tests…");
+    }
+
+    private sealed record TestRow(string Mark, string Name, string Outcome, string Duration, TestResult Result);
+
+    /// <summary>Test Explorer: every test of the last run, failures first.</summary>
+    private void ShowTestResults(List<TestResult> results)
+    {
+        TestList.ItemsSource = results.OrderBy(r => r.Outcome == TestOutcome.Failed ? 0 : r.Outcome == TestOutcome.Skipped ? 2 : 1).ThenBy(r => r.Name)
+            .Select(r => new TestRow(r.Outcome switch { TestOutcome.Passed => "✔", TestOutcome.Failed => "✖", _ => "–" }, r.Name, r.Outcome.ToString(), r.Duration, r))
+            .ToList();
+        int Count(TestOutcome outcome) => results.Count(r => r.Outcome == outcome);
+        TestSummary.Text = results.Count == 0 ? "No test results in the output. (Test Explorer reads dotnet test, pytest, go test and cargo test.)"
+            : $"{results.Count} tests: {Count(TestOutcome.Passed)} passed, {Count(TestOutcome.Failed)} failed, {Count(TestOutcome.Skipped)} skipped. Double-click a test to go to it.";
+        if (results.Count > 0) ShowPanel(TestExplorerTab);
+    }
+
+    /// <summary>Goes to a test's method, found by name in the project's files.</summary>
+    private void OpenTest(TestResult test)
+    {
+        if (workspace == null) return;
+        var name = test.Name.Split("::")[^1].Split('(')[0].Split('.')[^1];
+        var symbol = SymbolParser.Index(workspace).FirstOrDefault(s => s.Name == name && s.Path != null);
+        if (symbol != null) OpenPath(symbol.Path!, symbol.Line);
+        else StatusText.Text = $"Couldn't find the test “{name}”";
     }
 
     private void EditRunCommand()
@@ -1882,21 +1926,18 @@ public partial class MainWindow : Window
     {
         var folder = SelectedFolder() ?? workspace;
         if (folder == null) return;
-        var name = Prompt.Ask(this, "Add New Item", "File name (for example Customer.vb, Form2.cs, Page.html):", "Class1.vb");
-        if (string.IsNullOrWhiteSpace(name)) return;
-        var path = Path.Combine(folder, name.Trim());
-        if (File.Exists(path)) { ShowError($"“{name}” already exists", "Choose a different name."); return; }
-        var className = ProjectTemplates.Identifier(Path.GetFileNameWithoutExtension(name));
-        var contents = Path.GetExtension(path).ToLowerInvariant() switch
+        var preferred = Current?.Language.Id switch { "csharp" => "C#", "vb" => "VB.NET", "python" => "Python", "fsharp" => "F#", _ => null };
+        if (AddNewItemWindow.Ask(this, preferred) is not { } choice) return;
+        var fileName = ItemTemplates.FileName(choice.Name, choice.Template);
+        var files = ItemTemplates.Files(choice.Template, fileName, ProjectTemplates.Identifier(Path.GetFileName(workspace ?? folder)));
+        if (files.FirstOrDefault(f => File.Exists(Path.Combine(folder, f.FileName))) is { FileName: not null } existing)
         {
-            ".vb" => $"Public Class {className}\r\n\r\nEnd Class\r\n",
-            ".cs" => $"namespace {ProjectTemplates.Identifier(Path.GetFileName(workspace ?? folder))};\r\n\r\npublic class {className}\r\n{{\r\n}}\r\n",
-            ".html" => "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n    <meta charset=\"utf-8\">\r\n    <title></title>\r\n</head>\r\n<body>\r\n\r\n</body>\r\n</html>\r\n",
-            _ => "",
-        };
-        File.WriteAllText(path, contents);
+            ShowError($"“{existing.FileName}” already exists", "Choose a different name.");
+            return;
+        }
+        foreach (var (name, contents) in files) File.WriteAllText(Path.Combine(folder, name), contents);
         ReloadExplorer();
-        OpenPath(path);
+        OpenPath(Path.Combine(folder, fileName));
     }
 
     private void ManageNuGet()
@@ -1961,6 +2002,44 @@ public partial class MainWindow : Window
         if (ExplorerPane.Visibility != Visibility.Visible) SetPane(ExplorerPane, true);
         SideTabs.SelectedItem = ClassViewTab;
         classView.Refresh();
+    }
+
+    /// <summary>
+    /// Works out a file's CodeLens in the background: each type's and member's uses in the project's files of its
+    /// language, and who changed it last (git blame), then shows it.
+    /// </summary>
+    private async void UpdateCodeLens(EditorDocument document)
+    {
+        if (!settings.ShowCodeLens || document.Path is not { } path || !SymbolParser.Supports(document.Language.Id))
+        {
+            document.SetCodeLens(new Dictionary<int, string>());
+            return;
+        }
+        var text = document.Editor.Text;
+        var language = document.Language;
+        var folder = workspace;
+        var openTexts = documents.Where(d => d.Path != null).ToDictionary(d => Path.GetFullPath(d.Path!), d => d.Editor.Text, StringComparer.OrdinalIgnoreCase);
+        var inRepository = gitPanel.Current != null;
+        var lineCount = document.Editor.Document.LineCount;
+        var lens = await Task.Run(() =>
+        {
+            var symbols = SymbolParser.Symbols(text, language.Id, path);
+            if (symbols.Count == 0) return new Dictionary<int, string>();
+            var files = folder != null && path.StartsWith(folder, StringComparison.OrdinalIgnoreCase)
+                ? FileSearch.Files(folder, string.Join(";", language.Extensions.Select(e => "*." + e))).Take(2000).ToList() : new List<string> { path };
+            var texts = files.Select(f => openTexts.GetValueOrDefault(Path.GetFullPath(f)) ?? FileSearch.ReadText(f) ?? "").ToList();
+            if (!files.Any(f => SamePath(f, path))) texts.Add(text);
+            var masked = texts.Select(t => ExtractMethod.Mask(t, language)).ToList();
+            int Uses(string name) => masked.Sum(m => CodeLens.CountWord(m, name, language, alreadyMasked: true));
+            Dictionary<int, GitBlameLine>? blame = null;
+            if (inRepository && folder != null)
+            {
+                var result = GitCommand.Run(folder, "blame", "--line-porcelain", "--", Path.GetRelativePath(folder, path));
+                if (result.Succeeded) blame = GitBlame.Parse(result.Output);
+            }
+            return CodeLens.Describe(symbols, Uses, blame, lineCount);
+        });
+        if (documents.Contains(document) && settings.ShowCodeLens) document.SetCodeLens(lens);
     }
 
     public void ShowServerExplorer()
@@ -2065,6 +2144,7 @@ public partial class MainWindow : Window
                     $"STATUS: {StatusText.Text}\nTABS: {string.Join(",", documents.Select(d => d.DisplayName))}\nOUTPUT:\n{OutputText.Text}\n" +
                     $"SERVER: {(Current != null ? intelliSense.ServerName(Current) : null)}\n" +
                     $"QUERY: {QuerySummary.Text}\nSYMBOLS: {string.Join(",", classView.Symbols.Select(x => x.Name))}\n" +
+                    $"COMPLETION: {string.Join(",", intelliSense.CompletionLabels)}\nCODELENS: {string.Join(" / ", Current?.CodeLensTexts ?? Enumerable.Empty<string>())}\n" +
                     $"ERRORS:\n{string.Join("\n", (ErrorList.ItemsSource as IEnumerable<ErrorRow> ?? Enumerable.Empty<ErrorRow>()).Select(r => $"{r.FileName}:{r.Line}: {r.Message}"))}\n" +
                     $"FINDRESULTS:\n{string.Join("\n", (FindResults.ItemsSource as IEnumerable<LocationRow> ?? Enumerable.Empty<LocationRow>()).Select(r => $"{Path.GetFileName(r.FullPath)}:{r.Line}"))}\n");
                 break;
@@ -2076,6 +2156,7 @@ public partial class MainWindow : Window
             case "quickactions": intelliSense.ShowQuickActions(Current); break;
             case "git": ShowGitChanges(); break;
             case "classview": ShowClassView(); break;
+            case "additem": AddNewItem(); break;
             case var a when a.StartsWith("sqlite:"): ShowServerExplorer(); serverExplorer.AddSqlite(a[7..]); break;
             case var a when a.StartsWith("query:") && serverExplorer.Selected is { } connection: serverExplorer.Run(connection, a[6..]); break;
             case "commit": gitPanel.Commit(); break;

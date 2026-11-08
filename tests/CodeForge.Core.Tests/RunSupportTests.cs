@@ -165,5 +165,29 @@ public class RunSupportTests
         var merged = PathVariable.Merge(@"C:\Windows;C:\Tools\", @"C:\Windows\;C:\Program Files\nodejs\", @"C:\tools;C:\Users\a\go\bin");
         Assert.Equal(@"C:\Windows;C:\Tools\;C:\Program Files\nodejs\;C:\Users\a\go\bin", merged);
     }
+
+    [Fact]
+    public void ReadsTestResultsFromEachRunner()
+    {
+        var dotnet = TestResults.Parse("  Passed MyTests.CalcTests.Adds [3 ms]\r\n  Failed MyTests.CalcTests.Divides [12 ms]\r\n  Error Message:\r\n  Skipped MyTests.CalcTests.Later [1 ms]\r\nFailed!  - Failed: 1, Passed: 1\r\n");
+        Assert.Equal("MyTests.CalcTests.Adds:Passed:3 ms|MyTests.CalcTests.Divides:Failed:12 ms|MyTests.CalcTests.Later:Skipped:1 ms",
+            string.Join("|", dotnet.Select(r => $"{r.Name}:{r.Outcome}:{r.Duration}")));
+        Assert.Equal(TestOutcome.Failed, TestResults.Parse("test_calc.py::test_divide FAILED                  [ 50%]")[0].Outcome);
+        Assert.Equal("TestAdd", TestResults.Parse("--- PASS: TestAdd (0.00s)")[0].Name);
+        Assert.Equal(TestOutcome.Skipped, TestResults.Parse("test tests::later ... ignored")[0].Outcome);
+        Assert.Equal("go test -v ./...", TestResults.Verbose("go test ./..."));
+    }
+
+    [Fact]
+    public void ClassifiesOutputLinesByWhatTheySay()
+    {
+        Assert.Equal(OutputLineKind.Error, OutputClassifier.Kind(@"C:\p\Program.cs(3,5): error CS1002: ; expected"));
+        Assert.Equal(OutputLineKind.Error, OutputClassifier.Kind("Traceback (most recent call last):"));
+        Assert.Equal(OutputLineKind.Error, OutputClassifier.Kind("ZeroDivisionError: division by zero"));
+        Assert.Equal(OutputLineKind.Error, OutputClassifier.Kind("  Failed MyTests.Divides [12 ms]"));
+        Assert.Equal(OutputLineKind.Error, OutputClassifier.Kind("'gcc' is not recognized as an internal or external command,"));
+        Assert.Equal(OutputLineKind.Warning, OutputClassifier.Kind(@"C:\p\a.cs(1,1): warning CS0168: unused"));
+        Assert.Equal(OutputLineKind.Normal, OutputClassifier.Kind("Hello, error-free world"));
+    }
 }
 

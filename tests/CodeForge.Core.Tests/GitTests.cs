@@ -67,5 +67,20 @@ public class GitTests
         Assert.False(GitIdentity.IsMissing("nothing to commit"));
         Assert.Contains("bin/", GitIdentity.DefaultIgnore);
     }
+
+    [Fact]
+    public void CodeLensCountsUsesAndShowsTheLastChange()
+    {
+        var code = "Module M\n    Sub Main()\n        Greet() ' Greet in a comment\n        Greet()\n    End Sub\n    Sub Greet()\n        Console.WriteLine(\"Greet\")\n    End Sub\nEnd Module";
+        var vb = Languages.ById("vb");
+        Assert.Equal(3, CodeLens.CountWord(code, "greet", vb));
+        var symbols = SymbolParser.Symbols(code, "vb");
+        var hash = new string('b', 40);
+        var blame = Enumerable.Range(1, 9).ToDictionary(l => l, l => new GitBlameLine(l == 7 ? new string('0', 40) : hash, "Ahmed", DateTimeOffset.Now.AddDays(-3), "x"));
+        var lens = CodeLens.Describe(symbols, name => CodeLens.CountWord(code, name, vb), blame, 9);
+        Assert.Equal("0 references  |  Ahmed, 3 days ago", lens[2]);
+        Assert.Equal("2 references  |  not committed yet", lens[6]);
+        Assert.StartsWith("0 references", lens[1]);
+    }
 }
 

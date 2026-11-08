@@ -11,6 +11,7 @@ public sealed class Settings
     public bool CheckForUpdates { get; set; } = true;
     public DateTime LastUpdateCheck { get; set; }
     public bool RestoreSession { get; set; } = true;
+    public bool ShowCodeLens { get; set; } = true;
     public string Configuration { get; set; } = "Debug";
     public string? Workspace { get; set; }
     public List<string> OpenFiles { get; set; } = [];

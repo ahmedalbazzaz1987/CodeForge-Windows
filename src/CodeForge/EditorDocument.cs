@@ -66,6 +66,8 @@ public sealed class EditorDocument
         bookmarkRenderer = new BookmarkRenderer(bookmarks);
         Editor.TextArea.TextView.BackgroundRenderers.Add(bookmarkRenderer);
         Editor.TextArea.TextView.BackgroundRenderers.Add(executionRenderer);
+        codeLens = new CodeLensRenderer(Editor);
+        Editor.TextArea.TextView.BackgroundRenderers.Add(codeLens);
         // Breakpoints go in their own margin left of the line numbers, as in Visual Studio; a click there sets one.
         breakpointMargin = new BreakpointMargin(this);
         Editor.TextArea.LeftMargins.Insert(0, breakpointMargin);
@@ -199,6 +201,13 @@ public sealed class EditorDocument
     }
 
     public void SetDiagnostics(IEnumerable<Diagnostic> list) => diagnostics.Set(list);
+
+    private readonly CodeLensRenderer codeLens;
+
+    /// <summary>CodeLens text by line (empty hides it). Edits move it with its line until it's worked out again.</summary>
+    public void SetCodeLens(Dictionary<int, string> lens) => codeLens.Set(lens);
+
+    public IEnumerable<string> CodeLensTexts => codeLens.Texts;
 
     public string? DiagnosticAt(int offset) => diagnostics.MessageAt(offset);
 
@@ -488,3 +497,64 @@ public sealed class ExecutionLineRenderer : IBackgroundRenderer
         }
     }
 }
+
+/// <summary>
+/// CodeLens: "3 references | Ahmed, 2 days ago", faint, after the line that declares a type or member. (Visual Studio
+/// puts it on a line of its own above; AvalonEdit can't add lines, so it goes at the end, like Visual Studio Code's
+/// inline hints.)
+/// </summary>
+public sealed class CodeLensRenderer(TextEditor editor) : IBackgroundRenderer
+{
+    private readonly List<(TextAnchor Anchor, string Text)> lenses = [];
+
+    public IEnumerable<string> Texts => lenses.Select(l => l.Text);
+
+    public KnownLayer Layer => KnownLayer.Selection;
+
+    public void Set(Dictionary<int, string> lens)
+    {
+        lenses.Clear();
+        var document = editor.Document;
+        foreach (var (line, text) in lens)
+        {
+            if (line < 1 || line > document.LineCount) continue;
+            var anchor = document.CreateAnchor(document.GetLineByNumber(line).EndOffset);
+            anchor.MovementType = AnchorMovementType.AfterInsertion;
+            lenses.Add((anchor, text));
+        }
+        editor.TextArea.TextView.InvalidateLayer(Layer);
+    }
+
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (lenses.Count == 0 || !textView.VisualLinesValid) return;
+        var first = textView.VisualLines[0].FirstDocumentLine.LineNumber;
+        var last = textView.VisualLines[^1].LastDocumentLine.LineNumber;
+        var brush = (Brush)Application.Current.Resources["SubtleTextBrush"];
+        var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        foreach (var (anchor, text) in lenses)
+        {
+            if (anchor.IsDeleted) continue;
+            var line = editor.Document.GetLineByOffset(anchor.Offset);
+            if (line.LineNumber < first || line.LineNumber > last) continue;
+            var end = textView.GetVisualPosition(new TextViewPosition(line.LineNumber, line.Length + 1), VisualYPosition.TextMiddle);
+            var formatted = new FormattedText(text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, typeface,
+                Math.Max(editor.FontSize - 2, 9), brush, VisualTreeHelper.GetDpi(textView).PixelsPerDip);
+            drawingContext.DrawText(formatted, new Point(end.X - textView.ScrollOffset.X + 28, end.Y - textView.ScrollOffset.Y - formatted.Height / 2));
+        }
+    }
+}
+
+/// <summary>Output window lines that report an error red, and warnings amber (OutputClassifier decides).</summary>
+public sealed class OutputColorizer : DocumentColorizingTransformer
+{
+    protected override void ColorizeLine(DocumentLine line)
+    {
+        if (line.Length == 0) return;
+        var kind = OutputClassifier.Kind(CurrentContext.Document.GetText(line));
+        if (kind == OutputLineKind.Normal) return;
+        var brush = Themes.Brush(kind == OutputLineKind.Error ? "#E5484D" : "#D29922");
+        ChangeLinePart(line.Offset, line.EndOffset, element => element.TextRunProperties.SetForegroundBrush(brush));
+    }
+}
+

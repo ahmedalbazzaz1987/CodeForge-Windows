@@ -315,3 +315,46 @@ public static class StartPageView
         host.Content = root;
     }
 }
+
+/// <summary>Project ▸ Add New Item: the item templates by language, and the file's name.</summary>
+public static class AddNewItemWindow
+{
+    public static (ItemTemplate Template, string Name)? Ask(Window owner, string? preferredGroup)
+    {
+        var window = DialogKit.Make(owner, "Add New Item", 620, 460);
+        var groups = new ListBox { Width = 140 };
+        var items = new ListBox { Margin = new Thickness(10, 0, 0, 0) };
+        var name = new TextBox();
+        var groupNames = ItemTemplates.All.Select(t => t.Group).Distinct().ToList();
+        foreach (var group in groupNames) groups.Items.Add(group);
+        void ShowGroup()
+        {
+            items.Items.Clear();
+            foreach (var template in ItemTemplates.All.Where(t => t.Group == groups.SelectedItem as string))
+                items.Items.Add(new ListBoxItem { Content = $"{template.Name}   (.{template.Extension})", Tag = template });
+            items.SelectedIndex = 0;
+        }
+        groups.SelectionChanged += (_, _) => ShowGroup();
+        items.SelectionChanged += (_, _) =>
+        {
+            if ((items.SelectedItem as ListBoxItem)?.Tag is ItemTemplate template) name.Text = template.DefaultName + "." + template.Extension;
+        };
+        items.MouseDoubleClick += (_, _) => { if (items.SelectedItem != null) window.DialogResult = true; };
+        var lists = new DockPanel { Height = 300 };
+        DockPanel.SetDock(groups, Dock.Left);
+        lists.Children.Add(groups);
+        lists.Children.Add(items);
+        var panel = new StackPanel { Margin = new Thickness(18) };
+        panel.Children.Add(lists);
+        panel.Children.Add(new TextBlock { Text = "Name", Margin = new Thickness(0, 10, 0, 0) });
+        panel.Children.Add(name);
+        panel.Children.Add(DialogKit.Buttons(window, "Add"));
+        window.Content = panel;
+        groups.SelectedIndex = Math.Max(groupNames.IndexOf(preferredGroup ?? ""), 0);
+        window.Loaded += (_, _) => { name.Focus(); name.Select(0, Path.GetFileNameWithoutExtension(name.Text).Length); };
+        if (Environment.GetEnvironmentVariable("CF_ANSWER") is { } answer)
+            return ((items.SelectedItem as ListBoxItem)?.Tag as ItemTemplate is { } scripted ? (scripted, answer) : null);
+        return window.ShowDialog() == true && (items.SelectedItem as ListBoxItem)?.Tag is ItemTemplate chosen ? (chosen, name.Text) : null;
+    }
+}
+

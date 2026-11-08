@@ -240,3 +240,95 @@ public static class PathVariable
     }
 }
 
+
+public enum TestOutcome { Passed, Failed, Skipped }
+
+/// <summary>One test's result, for Test Explorer.</summary>
+public sealed record TestResult(string Name, TestOutcome Outcome, string Duration = "");
+
+/// <summary>Reads test results from dotnet test, pytest -v, go test -v and cargo test output.</summary>
+public static partial class TestResults
+{
+    /// <summary>The test command with the option that lists every test, not only failures.</summary>
+    public static string Verbose(string command) => command switch
+    {
+        "dotnet test" => "dotnet test --logger \"console;verbosity=normal\"",
+        "python -m pytest" => "python -m pytest -v",
+        "go test ./..." => "go test -v ./...",
+        _ => command,
+    };
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\s*(Passed|Failed|Skipped)\s+(\S.*?)(?:\s+\[([^\]]+)\])?\s*$")]
+    private static partial System.Text.RegularExpressions.Regex DotNet();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(\S+::\S+)\s+(PASSED|FAILED|SKIPPED|ERROR)")]
+    private static partial System.Text.RegularExpressions.Regex Pytest();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\s*--- (PASS|FAIL|SKIP): (\S+) \(([^)]+)\)")]
+    private static partial System.Text.RegularExpressions.Regex Go();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^test (\S+) \.\.\. (ok|FAILED|ignored)")]
+    private static partial System.Text.RegularExpressions.Regex Cargo();
+
+    public static List<TestResult> Parse(string output)
+    {
+        var results = new List<TestResult>();
+        foreach (var raw in output.Replace("\r\n", "\n").Split('\n'))
+        {
+            var line = ConsoleText.StripAnsi(raw);
+            if (DotNet().Match(line) is { Success: true } dotnet && !line.TrimStart().StartsWith("Failed!") && !line.TrimStart().StartsWith("Passed!"))
+                results.Add(new TestResult(dotnet.Groups[2].Value, Outcome(dotnet.Groups[1].Value), dotnet.Groups[3].Value));
+            else if (Pytest().Match(line) is { Success: true } pytest)
+                results.Add(new TestResult(pytest.Groups[1].Value, Outcome(pytest.Groups[2].Value)));
+            else if (Go().Match(line) is { Success: true } go)
+                results.Add(new TestResult(go.Groups[2].Value, Outcome(go.Groups[1].Value), go.Groups[3].Value));
+            else if (Cargo().Match(line) is { Success: true } cargo)
+                results.Add(new TestResult(cargo.Groups[1].Value, Outcome(cargo.Groups[2].Value)));
+        }
+        return results;
+    }
+
+    private static TestOutcome Outcome(string word) => word.ToUpperInvariant() switch
+    {
+        "PASSED" or "PASS" or "OK" => TestOutcome.Passed,
+        "SKIPPED" or "SKIP" or "IGNORED" => TestOutcome.Skipped,
+        _ => TestOutcome.Failed,
+    };
+}
+
+public enum OutputLineKind { Normal, Error, Warning }
+
+/// <summary>
+/// Colors program output by what a line says (the Mac version's rules): a console doesn't keep stdout and stderr
+/// apart, and many tools write errors to stdout anyway.
+/// </summary>
+public static partial class OutputClassifier
+{
+    [System.Text.RegularExpressions.GeneratedRegex("""
+        ^\s*(?:error|fatal\ error|fatal)(?:\[[^\]]*\])?\s*:
+        | :\s*(?:fatal\ )?error(?:\s+[A-Z]+\d+)?\s*:
+        | ^Traceback\ \(most\ recent\ call\ last\)
+        | ^(?:[A-Za-z_][\w.]*)?(?:Error|Exception)(?::\ .*)?$
+        | ^Exception\ in\ thread\b
+        | ^Unhandled\ exception\b
+        | ^panic:\ 
+        | ^thread\ '.*'(?:\ \(\d+\))?\ panicked\b
+        | \bFatal\ error:\ 
+        | ^Build\ FAILED\b | ^FAILED\b | ^Failed!\s
+        | is\ not\ recognized\ as\ an\ internal\ or\ external\ command
+        | ^\S*\.go:\d+:\d+:\ 
+        | \[FAIL\]\s*$ | ^\s*Failed\ \S+\ \[\d
+        | ^Segmentation\ fault
+        """, System.Text.RegularExpressions.RegexOptions.IgnorePatternWhitespace)]
+    private static partial System.Text.RegularExpressions.Regex Error();
+
+    [System.Text.RegularExpressions.GeneratedRegex("""
+        ^\s*warning(?:\[[^\]]*\])?\s*:
+        | :\s*warning(?:\s+[A-Z]+\d+)?\s*:
+        | ^npm\ (?:WARN|warn)\b
+        """, System.Text.RegularExpressions.RegexOptions.IgnorePatternWhitespace)]
+    private static partial System.Text.RegularExpressions.Regex Warning();
+
+    public static OutputLineKind Kind(string line) =>
+        Error().IsMatch(line) ? OutputLineKind.Error : Warning().IsMatch(line) ? OutputLineKind.Warning : OutputLineKind.Normal;
+}

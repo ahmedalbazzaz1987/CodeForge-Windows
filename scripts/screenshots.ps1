@@ -157,6 +157,16 @@ $db = "$work\Shop.db"
 $text = Report "29-server-explorer" @{ CF_OPEN = "$refactor"; CF_ACTIONS = "sqlite:$db,query:CREATE TABLE products (name TEXT),query:INSERT INTO products (name) VALUES ('Coffee'),query:SELECT * FROM products,dump"; CF_ACTION_GAP = "3" }
 if ($text -notmatch "QUERY: Query .*1 row") { $failed += "Server Explorer query"; Write-Host $text }
 
+# VB.NET IntelliSense without a server: members of .NET types; CodeLens; Add New Item.
+Set-Content "$refactor\Members.vb" "Module Members`r`n    Sub Main()`r`n        Dim names As New List(Of String)`r`n        Console.WriteLine(names.Count)`r`n    End Sub`r`nEnd Module`r`n"
+$text = Report "30-vb-members" @{ CF_OPEN = "$refactor;$refactor\Members.vb"; CF_ACTIONS = "caret:Console.,complete,dump"; CF_ACTION_GAP = "4" }
+if ($text -notmatch "COMPLETION: .*WriteLine" -or $text -match "COMPLETION: .*Length") { $failed += "VB.NET member list"; Write-Host $text }
+if ($text -notmatch "CODELENS: .*reference") { $failed += "CodeLens"; Write-Host $text }
+$env:CF_ANSWER = "Customer"
+$text = Report "31-add-new-item" @{ CF_OPEN = "$refactor;$refactor\Members.vb"; CF_ACTIONS = "additem,dump" }
+Remove-Item Env:CF_ANSWER
+if (-not (Test-Path "$refactor\Customer.vb")) { $failed += "Add New Item"; Write-Host $text }
+
 if (Test-Path "$env:APPDATA\CodeForge\errors.log") { Get-Content "$env:APPDATA\CodeForge\errors.log" }
 Get-ChildItem $work -Filter errors.log -Recurse | ForEach-Object { Write-Host "== $($_.FullName)"; Get-Content $_.FullName }
 if ($failed.Count -gt 0) { throw "Screenshots failed: $($failed -join ', ')" }

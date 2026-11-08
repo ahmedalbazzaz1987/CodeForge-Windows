@@ -72,17 +72,25 @@ public static partial class BasicIntelliSense
 
     public static bool IsIdentifier(char c) => char.IsLetterOrDigit(c) || c == '_';
 
-    public static (List<CompletionEntry> Items, int WordStart) Completions(string text, int offset, Language language)
+    /// <param name="symbols">The project's declarations: VB.NET (and C# without its server) then also gets member lists
+    /// after a dot, locals and the .NET types, as in the Mac version.</param>
+    public static (List<CompletionEntry> Items, int WordStart) Completions(string text, int offset, Language language, IReadOnlyList<CodeSymbol>? symbols = null)
     {
         offset = Math.Min(offset, text.Length);
         var start = WordStart(text, offset);
-        if (!Offers(language) || InStringOrComment(text, start, language) || (start > 0 && text[start - 1] == '.')) return ([], start);
+        var dotNet = symbols != null && DotNetIntelliSense.Supports(language.Id);
+        if (!Offers(language) || InStringOrComment(text, start, language)) return ([], start);
+        var afterDot = start > 0 && text[start - 1] == '.';
+        List<CompletionEntry>? smart = dotNet ? DotNetIntelliSense.Completions(text, start, language.Id, symbols!) : null;
+        if (afterDot || (smart != null && Regex.IsMatch(text[(start > 0 ? text.LastIndexOf('\n', start - 1) + 1 : 0)..start], @"(?:^\s*(?:Imports|using)\s+[\w.]*|\b(?:As|Of|Inherits|Implements)\s+(?:New\s+)?)$", RegexOptions.IgnoreCase)))
+            return (smart ?? [], start);
         var items = new List<CompletionEntry>();
         var seen = new HashSet<string>(language.CaseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         void Add(string label, string detail, int kind, string? snippet = null, string sort = "")
         {
             if (seen.Add(label)) items.Add(new CompletionEntry(label, detail, kind, label, label, sort + label.ToLowerInvariant(), Snippet: snippet));
         }
+        foreach (var entry in smart ?? []) Add(entry.Label, entry.Detail, entry.Kind);
         foreach (var snippet in Snippets.ForLanguage(language.Id)) Add(snippet.Shortcut, snippet.Title, 15, snippet.Body, "~");
         foreach (var keyword in Keywords(language).Order()) Add(keyword, "Keyword", 14);
         var limit = Math.Min(text.Length, 400_000);

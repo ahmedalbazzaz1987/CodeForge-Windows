@@ -21,6 +21,8 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
   Method and Quick Actions (Ctrl+.).
 - **Class View, Object Browser and Server Explorer**: browse the project's types and members; connect to SQLite,
   SQL Server (LocalDB), PostgreSQL and MySQL, see tables and run queries. A Code Snippets Manager for your own snippets.
+- **VB.NET IntelliSense, CodeLens and Test Explorer**: member lists for .NET and your own classes without a language
+  server; references and the last change above each member; every test's result.
 - **Run and fix**: F5 runs the project or the current file; build errors from VB.NET, C#, gcc, Python and Node.js go to
   the Error List and are underlined in the code.
 - **Many languages**: C#, VB.NET, F#, XAML, Python, JavaScript, TypeScript, C, C++, Java, Kotlin, Go, Rust, Swift,

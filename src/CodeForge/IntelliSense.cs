@@ -44,6 +44,10 @@ public sealed class IntelliSense
     private readonly Dictionary<string, List<Diagnostic>> live = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>Languages whose missing server was already mentioned in the status bar.</summary>
     private readonly HashSet<string> mentioned = [];
+    /// <summary>The project's declarations, for VB.NET IntelliSense (and C# without its server); read once, then on save.</summary>
+    private List<CodeSymbol>? projectSymbols;
+    private string? symbolsFolder;
+    private bool readingSymbols;
     private CompletionWindow? completion;
     private ToolTip? hoverTip;
     private int completionGeneration;
@@ -53,6 +57,9 @@ public sealed class IntelliSense
     public IEnumerable<Diagnostic> LiveDiagnostics => live.Values.SelectMany(d => d);
 
     public bool HasServer(EditorDocument document) => sessions.ContainsKey(document);
+
+    /// <summary>The names in the open completion list, for scripts.</summary>
+    public IEnumerable<string> CompletionLabels => completion?.CompletionList.CompletionData.Select(d => d.Text) ?? Enumerable.Empty<string>();
 
     public string? ServerName(EditorDocument document) => sessions.TryGetValue(document, out var session)
         ? clients.FirstOrDefault(c => c.Value == session.Client).Key?.Split('|')[0] : null;
@@ -91,6 +98,7 @@ public sealed class IntelliSense
         document.Editor.TextChanged += (_, _) => Changed(document);
         document.Saved += () =>
         {
+            if (DotNetIntelliSense.Supports(document.Language.Id)) ForgetSymbols();
             // Save As can give the file a new name or language.
             if (sessions.TryGetValue(document, out var session) && !SamePath(session.Path, document.Path)) Detach(document);
             if (sessions.TryGetValue(document, out session)) { Flush(document); session.Saved(); }
@@ -276,7 +284,7 @@ public sealed class IntelliSense
         var text = document.Editor.Text;
         if (!sessions.TryGetValue(document, out var session))
         {
-            var (items, start) = BasicIntelliSense.Completions(text, caret, document.Language);
+            var (items, start) = BasicIntelliSense.Completions(text, caret, document.Language, SymbolsFor(document));
             // Opened by typing, words alone aren't worth a list.
             if (!explicitly && items.All(i => i.Kind == 1)) return;
             Show(document, items, start, explicitly);
@@ -372,7 +380,8 @@ public sealed class IntelliSense
         }
         else
         {
-            Present(null);
+            Present(DotNetIntelliSense.Supports(document.Language.Id) && SymbolsFor(document) is { } symbols
+                ? DotNetIntelliSense.Hover(document.Editor.Text, at, document.Language.Id, symbols) : null);
         }
     }
 
@@ -402,6 +411,13 @@ public sealed class IntelliSense
             return;
         }
         // Without a server: a declaration of the name in this file, then in the project's files of this language.
+        // VB.NET: members of .NET and project types, locals, then declarations anywhere in the project.
+        if (DotNetIntelliSense.Supports(document.Language.Id) && SymbolsFor(document) is { } known &&
+            DotNetIntelliSense.Definition(document.Editor.Text, at, document.Language.Id, known) is { } definition)
+        {
+            if (definition.Path == null && document.Path is { } here2) { OpenLocation(here2, definition.Line, null); return; }
+            if (definition.Path != null) { OpenLocation(definition.Path, definition.Line, null); return; }
+        }
         if (BasicIntelliSense.Declaration(document.Editor.Text, word.Text, document.Language) is { } here && document.Path is { } path)
         {
             var location = document.Editor.Document.GetLocation(here);
@@ -480,6 +496,39 @@ public sealed class IntelliSense
 
     private static bool SamePath(string? a, string? b) =>
         a != null && b != null && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The project's declarations with this file's current ones (unsaved edits included), or null for languages that
+    /// don't use them. The project is read in the background the first time; until then, only this file's.
+    /// </summary>
+    private List<CodeSymbol>? SymbolsFor(EditorDocument document)
+    {
+        if (!DotNetIntelliSense.Supports(document.Language.Id)) return null;
+        var own = SymbolParser.Symbols(document.Editor.Text, document.Language.Id, document.Path);
+        var folder = Workspace();
+        if (folder != symbolsFolder) { projectSymbols = null; symbolsFolder = folder; }
+        if (projectSymbols == null && folder != null) ReadProjectSymbols(folder);
+        var others = (projectSymbols ?? []).Where(s => !SamePath(s.Path, document.Path));
+        return [.. own, .. others];
+    }
+
+    private async void ReadProjectSymbols(string folder)
+    {
+        if (readingSymbols) return;
+        readingSymbols = true;
+        try
+        {
+            var found = await Task.Run(() => SymbolParser.Index(folder).Where(s => DotNetIntelliSense.Supports(Languages.ForFile(s.Path ?? "").Id)).ToList());
+            if (symbolsFolder == folder) projectSymbols = found;
+        }
+        finally
+        {
+            readingSymbols = false;
+        }
+    }
+
+    /// <summary>A file was saved: read the project's declarations again next time they're needed.</summary>
+    public void ForgetSymbols() => projectSymbols = null;
 
     // MARK: Refactoring
 

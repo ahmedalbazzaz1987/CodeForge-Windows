@@ -51,6 +51,13 @@ public static class ProjectTemplates
         DotNet("mstest", "MSTest Test Project", "Unit tests with MSTest.", "C#  Test", "Test1.cs", "mstest"),
         DotNet("nunit", "NUnit Test Project", "Unit tests with NUnit.", "C#  Test", "UnitTest1.cs", "nunit"),
         DotNet("razorclasslib", "Razor Class Library", "Razor components and pages to share between web apps.", "C#  Razor  Library", "Component1.razor", "razorclasslib"),
+        // Avalonia's templates aren't in the .NET SDK: installed the first time (dotnet new install), as on the Mac.
+        new("avalonia", "Avalonia Desktop App (XAML)", "A desktop app with XAML windows, like WPF, that also runs on macOS and Linux.",
+            "C#  XAML  Desktop  Avalonia", ".NET", "MainWindow.axaml",
+            "(dotnet new list avalonia.app | findstr /c:\"avalonia.app\" >nul || dotnet new install Avalonia.Templates) && dotnet new avalonia.app -o \"{folder}\" -n {ident}"),
+        new("avalonia-mvvm", "Avalonia MVVM App (XAML)", "An Avalonia desktop app organized as Views and ViewModels (MVVM).",
+            "C#  XAML  MVVM  Avalonia", ".NET", "Views/MainWindow.axaml",
+            "(dotnet new list avalonia.mvvm | findstr /c:\"avalonia.mvvm\" >nul || dotnet new install Avalonia.Templates) && dotnet new avalonia.mvvm -o \"{folder}\" -n {ident}"),
         DotNet("fs-console", "Console App (F#)", "An F# command-line program.", "F#  Console", "Program.fs", "console -lang F#"),
     ];
 

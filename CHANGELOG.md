@@ -1,7 +1,21 @@
 # Changelog
 
-## 0.7.1
+## 0.8.0
 
+Closes the remaining gap with the Mac version.
+
+- **VB.NET IntelliSense** without a language server, from the Mac version's .NET catalog and the project's own
+  classes: member lists after a dot (`Console.`, `names.` for a `List(Of String)`, `calc.` for your class — Shared
+  members only on the class), namespaces after `Imports`, types after `As`, local variables, Quick Info and Go To
+  Definition. C# gets the same when csharp-ls isn't installed.
+- **CodeLens**: after each class, method and property, how many times it's used in the project and who changed it
+  last (git blame). View ▸ Show CodeLens turns it off and on.
+- **Add New Item** (Project menu) lists item templates by language: VB.NET and C# Class, Module, Interface, Record
+  and Windows Form (with its .Designer file), Razor pages and components, web, Python, C/C++, F#, SQL and text files.
+- **Test Explorer** (Test menu, and a tab beside Output): every test of the last Run All Tests, passed, failed or
+  skipped, with its duration, for dotnet test, pytest, go test and cargo test. Double-click a test to go to it.
+- **Colored output**: error lines are red and warnings amber in the Output window, as on the Mac.
+- **Avalonia** project templates (desktop and MVVM), installing Avalonia's templates the first time.
 - Escape closes the Object Browser.
 
 ## 0.7.0

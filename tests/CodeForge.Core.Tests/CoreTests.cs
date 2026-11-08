@@ -126,6 +126,12 @@ public class TemplateTests
                 Assert.True(File.Exists(Path.Combine(ProjectTemplates.Create(template, "T " + template.Id, location), template.MainFile)), template.Id);
             Assert.Contains("name = \"t_rust\"", File.ReadAllText(Path.Combine(location, "T rust", "Cargo.toml")));
             Assert.Equal("my_app_2", ProjectTemplates.CrateName("My App 2"));
+            var form = ItemTemplates.All.First(t => t.Name == "Windows Form" && t.Group == "VB.NET");
+            var files = ItemTemplates.Files(form, ItemTemplates.FileName("Settings", form), "MyApp");
+            Assert.Equal("Settings.vb|Settings.Designer.vb", string.Join("|", files.Select(f => f.FileName)));
+            Assert.Contains("Partial Class Settings", files[1].Contents);
+            Assert.Contains("\r\n", files[0].Contents);
+            Assert.Equal("Page.html", ItemTemplates.FileName("Page.html", ItemTemplates.All.First(t => t.Extension == "cs")));
             Assert.Equal("app_3d", ProjectTemplates.CrateName("3D"));
         }
         finally { Directory.Delete(location, true); }
