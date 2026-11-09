@@ -368,8 +368,9 @@ public sealed class DebugSession
                 var category = (string?)body["category"] ?? "console";
                 if (category == "telemetry") return;
                 var isProgram = category is "stdout" or "stderr";
-                // Breakpoints are sent before GDB has loaded the program, so it reports each one as pending first.
-                if (!isProgram && DebugTools.IsPendingBreakpointNote(text)) return;
+                // Breakpoints are sent before GDB has loaded the program, so it reports each one as pending first
+                // (as "stdout", like the program's own output).
+                if (Configuration.AdapterId == "gdb" && DebugTools.IsPendingBreakpointNote(text)) return;
                 // The debugger's own messages can lack a line ending; the program's next line would join on to them.
                 if (!isProgram && !text.EndsWith('\n')) text += "\n";
                 Output?.Invoke(text, category == "stderr" ? DebugOutputKind.Error : isProgram ? DebugOutputKind.Program : DebugOutputKind.Info);

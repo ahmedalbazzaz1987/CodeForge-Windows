@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.4
+
+- GDB's pending-breakpoint notes are really hidden now: GDB sends them as program output, which 0.9.3 let through.
+
 ## 0.9.3
 
 - GDB's "No source file named…" and "Breakpoint 1 (…) pending." notes no longer appear in Output when debugging starts:
