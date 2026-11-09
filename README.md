@@ -102,4 +102,4 @@ scripts/              screenshots.ps1
 
 ## License
 
-MIT. Copyright © 2026 Ahmed Al-Bazzaz.
+GPL-3.0. Copyright © 2026 Ahmed Al-Bazzaz. You may use, change and share CodeForge; versions you share must stay open source under the same license. See [LICENSE](LICENSE).
