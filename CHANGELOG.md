@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.2
+
+- Debugging sends only the breakpoints of files that still exist and that the debugger reads (GDB no longer gets
+  Swift files), so Output has no "No source file named…" or "pending" lines left from other projects.
+
 ## 0.9.1
 
 From testing 0.9.0 on a PC.

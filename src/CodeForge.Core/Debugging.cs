@@ -414,7 +414,8 @@ public sealed class DebugSession
     public void SendBreakpoints(string file, IEnumerable<int> lines)
     {
         if (State == DebugState.Ended) return;
-        if (Configuration.SourceExtensions is { } kinds && !kinds.Contains(Path.GetExtension(file).ToLowerInvariant())) return;
+        // Only files that still exist, of a kind the debugger reads: anything else only adds "pending" lines to Output.
+        if (!File.Exists(file) || (Configuration.SourceExtensions is { } kinds && !kinds.Contains(Path.GetExtension(file).ToLowerInvariant()))) return;
         var path = Configuration.BreakpointsByName && file.Any(c => c > 127) ? Path.GetFileName(file) : file;
         adapter.Request("setBreakpoints", new JsonObject
         {
@@ -581,7 +582,10 @@ public static class DebugTools
             ["type"] = "gdb", ["request"] = "launch", ["program"] = NativeDebugging.ShortPath(program), ["args"] = new JsonArray(),
             ["cwd"] = NativeDebugging.ShortPath(folder),
         })
-        { SourceExtensions = NativeSources, BreakpointsByName = true, SourceFolder = folder };
+        { SourceExtensions = GdbSources, BreakpointsByName = true, SourceFolder = folder };
+
+    /// <summary>What GDB debugs here: C, C++ and Rust (Swift and Objective-C go to lldb-dap).</summary>
+    public static readonly HashSet<string> GdbSources = [".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".rs"];
 
     /// <summary>A Go program under Delve, which shows Go's variables. CodeForge builds the program; Delve runs it.</summary>
     public static DebugConfiguration Delve(string dlv, string program, string folder) =>
