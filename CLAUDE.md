@@ -1,4 +1,10 @@
-# CodeForge for Windows — notes for Claude
+# Kryndev for Windows (formerly CodeForge) — notes for Claude
+
+The product is called **Kryndev** (renamed from CodeForge in 0.10.0). Only user-visible text says Kryndev: the
+repository, projects, namespaces, `CodeForge.exe`, the installer's AppId, registry keys and the settings folders
+(`%APPDATA%\CodeForge`, `%LOCALAPPDATA%\CodeForge`) keep "CodeForge" so installed copies keep updating and keep their
+settings. Don't rename those. Release assets are `Kryndev-x.y.z-setup.exe` / `-windows.zip` (the updater matches the
+suffix, so older copies find them).
 
 The Windows version of CodeForge (the Mac version: github.com/ahmedalbazzaz1987/CodeForge, Swift/AppKit). The owner
 wants it to feel like Visual Studio Professional and keeps asking for features; `CHANGELOG.md` has the history.

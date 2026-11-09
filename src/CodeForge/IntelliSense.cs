@@ -240,7 +240,7 @@ public sealed class IntelliSense
         }
         var size = spec.DownloadSize != null ? $" ({spec.DownloadSize})" : "";
         var answer = MessageBox.Show(Owner(),
-            $"CodeForge gives {language.Name} files completion, Quick Info, Go To Definition and live errors with {spec.Name}. " +
+            $"Kryndev gives {language.Name} files completion, Quick Info, Go To Definition and live errors with {spec.Name}. " +
             $"It will download it{size} into its own folder with {spec.Installer}:\n\n{command}\n\nInstall it now?",
             $"Install {spec.Name}?", MessageBoxButton.OKCancel, MessageBoxImage.Question);
         if (answer != MessageBoxResult.OK) return;

@@ -126,7 +126,7 @@ public sealed class FileProperties(System.IO.FileInfo info, string language, int
     public string Name => info.Name;
     [System.ComponentModel.Category("File"), System.ComponentModel.ReadOnly(true), System.ComponentModel.DisplayName("Full Path"), System.ComponentModel.Description("Where the file is on disk.")]
     public string FullPath => info.FullName;
-    [System.ComponentModel.Category("File"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("The language CodeForge uses for the file.")]
+    [System.ComponentModel.Category("File"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("The language Kryndev uses for the file.")]
     public string Language => language;
     [System.ComponentModel.Category("File"), System.ComponentModel.ReadOnly(true), System.ComponentModel.Description("The size of the saved file.")]
     public string Size => info.Length < 1024 ? $"{info.Length} bytes" : info.Length < 1024 * 1024 ? $"{info.Length / 1024.0:0.#} KB" : $"{info.Length / 1048576.0:0.#} MB";

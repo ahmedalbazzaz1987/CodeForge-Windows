@@ -8,7 +8,9 @@
     <AssemblyName>CodeForge</AssemblyName>
     <RootNamespace>CodeForge</RootNamespace>
     <ApplicationIcon>CodeForge.ico</ApplicationIcon>
-    <Product>CodeForge</Product>
+    <Product>Kryndev</Product>
+    <!-- The name Windows shows (Task Manager, file properties). The program stays CodeForge.exe so updates keep working. -->
+    <AssemblyTitle>Kryndev</AssemblyTitle>
     <Company>Ahmed Al-Bazzaz</Company>
     <Authors>Ahmed Al-Bazzaz</Authors>
     <Copyright>Copyright © 2026 Ahmed Al-Bazzaz</Copyright>

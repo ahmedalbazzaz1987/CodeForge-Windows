@@ -297,7 +297,7 @@ public static class ConnectionDialog
             browse.Visibility = create.Visibility = isFile ? Visibility.Visible : Visibility.Collapsed;
             serverFields.Visibility = isFile ? Visibility.Collapsed : Visibility.Visible;
             if (Kind() == DataConnectionKind.SqlServer && location.Text.Length == 0) location.Text = @"(localdb)\MSSQLLocalDB";
-            hint.Text = isFile ? "CodeForge opens SQLite files with the SQLite that comes with Windows."
+            hint.Text = isFile ? "Kryndev opens SQLite files with the SQLite that comes with Windows."
                 : (Kind() == DataConnectionKind.SqlServer ? "Leave User empty to sign in with your Windows account (LocalDB, SQL Express). " : "") +
                   (ToolCheck.Find(DataConnection.Client(Kind())!) == null ? DataConnection.InstallHint(Kind()) : $"Uses {DataConnection.Client(Kind())}. The password is asked when you connect and never saved.");
         }

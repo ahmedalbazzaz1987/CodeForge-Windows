@@ -323,11 +323,11 @@ public partial class MainWindow : Window
 
         Menu("_Help",
             Item("Check for _Updates…", () => _ = Updater.CheckAsync(this, userInitiated: true)),
-            Item("CodeForge on _GitHub", () => Shell(Updater.ProjectPage)),
+            Item("Kryndev on _GitHub", () => Shell(Updater.ProjectPage)),
             Line(),
-            Item("_About CodeForge", () => MessageBox.Show(this,
-                $"CodeForge {Updater.CurrentVersion}\nA small Visual Studio-style IDE for Windows.\n\nBy Ahmed Al-Bazzaz\n{Updater.ProjectPage}",
-                "About CodeForge", MessageBoxButton.OK, MessageBoxImage.Information)));
+            Item("_About Kryndev", () => MessageBox.Show(this,
+                $"Kryndev {Updater.CurrentVersion}\nA small Visual Studio-style IDE for Windows.\n\nBy Ahmed Al-Bazzaz\n{Updater.ProjectPage}",
+                "About Kryndev", MessageBoxButton.OK, MessageBoxImage.Information)));
     }
 
     private void WireControls()
@@ -955,7 +955,7 @@ public partial class MainWindow : Window
     {
         if (!document.IsDirty) return true;
         Select(document);
-        var answer = MessageBox.Show(this, $"Save changes to “{document.DisplayName}”?", "CodeForge", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        var answer = MessageBox.Show(this, $"Save changes to “{document.DisplayName}”?", "Kryndev", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         return answer switch
         {
             MessageBoxResult.Yes => Save(document),
@@ -1275,7 +1275,7 @@ public partial class MainWindow : Window
         if (!File.Exists(netcoredbg))
         {
             var answer = MessageBox.Show(this,
-                "CodeForge debugs C#, VB.NET and F# with netcoredbg, Samsung's open-source .NET debugger (MIT license). " +
+                "Kryndev debugs C#, VB.NET and F# with netcoredbg, Samsung's open-source .NET debugger (MIT license). " +
                 "It will download it from GitHub (about 10 MB) into its own folder. This happens once.\n\nInstall it now?",
                 "Install the .NET debugger?", MessageBoxButton.OKCancel, MessageBoxImage.Question);
             if (answer != MessageBoxResult.OK) return;
@@ -1283,7 +1283,7 @@ public partial class MainWindow : Window
         }
         if (ToolCheck.Find("dotnet") is not { } dotnet)
         {
-            ShowError("The .NET SDK wasn't found", "Install it from https://dot.net, then restart CodeForge.");
+            ShowError("The .NET SDK wasn't found", "Install it from https://dot.net, then restart Kryndev.");
             return;
         }
         SaveAll();
@@ -1336,7 +1336,7 @@ public partial class MainWindow : Window
         SaveAll();
         if (ToolCheck.Find("python") is not { } python || python.Contains(@"\WindowsApps\", StringComparison.OrdinalIgnoreCase))
         {
-            ShowError("Python wasn't found", "Install Python 3 from https://www.python.org (or: winget install Python.Python.3.13), then restart CodeForge.");
+            ShowError("Python wasn't found", "Install Python 3 from https://www.python.org (or: winget install Python.Python.3.13), then restart Kryndev.");
             return;
         }
         var file = document.Path!;
@@ -1345,7 +1345,7 @@ public partial class MainWindow : Window
         void Launch() => StartSession(DebugTools.Python(python, debugpy, file, folder), Path.GetFileName(file));
         if (DebugTools.DebugpyInstalled(debugpy)) { Launch(); return; }
         var answer = MessageBox.Show(this,
-            "CodeForge debugs Python with debugpy. It will install it with pip (about 20 MB) into its own folder. This happens once.\n\nInstall it now?",
+            "Kryndev debugs Python with debugpy. It will install it with pip (about 20 MB) into its own folder. This happens once.\n\nInstall it now?",
             "Install the Python debugger?", MessageBoxButton.OKCancel, MessageBoxImage.Question);
         if (answer != MessageBoxResult.OK) return;
         afterRun = Launch;
@@ -1575,7 +1575,7 @@ public partial class MainWindow : Window
         }
         if (document.Language.RunCommand is not { } template)
         {
-            ShowError($"CodeForge doesn't know how to run {document.Language.Name} files", "Open the project folder to run the whole project, or use Debug ▸ Set Run Command….");
+            ShowError($"Kryndev doesn't know how to run {document.Language.Name} files", "Open the project folder to run the whole project, or use Debug ▸ Set Run Command….");
             return;
         }
         if (!ToolIsInstalled(template)) return;
@@ -1596,7 +1596,7 @@ public partial class MainWindow : Window
         ShowPanel(OutputTab);
         OutputText.Clear();
         var name = Path.GetFileNameWithoutExtension(program);
-        AppendOutput($"“{name}” isn't installed (or isn't on PATH), so this can't run yet.\n{ToolCheck.InstallHint(program) ?? "Install it, then restart CodeForge."}\n");
+        AppendOutput($"“{name}” isn't installed (or isn't on PATH), so this can't run yet.\n{ToolCheck.InstallHint(program) ?? "Install it, then restart Kryndev."}\n");
         StatusText.Text = $"{name} isn't installed";
         return false;
     }
@@ -1720,7 +1720,7 @@ public partial class MainWindow : Window
         if (workspace == null) return;
         if (BuildSystem.TestCommand(workspace) is not { } command)
         {
-            ShowError("No tests found", "CodeForge runs dotnet test, cargo test, go test, npm test and pytest.");
+            ShowError("No tests found", "Kryndev runs dotnet test, cargo test, go test, npm test and pytest.");
             return;
         }
         SaveAll();
@@ -1990,7 +1990,7 @@ public partial class MainWindow : Window
     {
         if (!designer.IsDirty) return true;
         SelectTab(designer);
-        var answer = MessageBox.Show(this, $"Save changes to “{designer.DisplayName}”?", "CodeForge", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        var answer = MessageBox.Show(this, $"Save changes to “{designer.DisplayName}”?", "Kryndev", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         return answer switch { MessageBoxResult.Yes => SaveDesigner(designer), MessageBoxResult.No => true, _ => false };
     }
 
@@ -2119,7 +2119,7 @@ public partial class MainWindow : Window
     {
         var document = Current;
         var designerTitle = CurrentDesigner is { } d0 ? d0.DisplayName + (d0.IsDirty ? " ●" : "") + " - " : "";
-        Title = designerTitle + (document != null ? document.DisplayName + (document.IsDirty ? " ●" : "") + " - " : "") + (workspace != null ? Path.GetFileName(workspace.TrimEnd('\\')) + " - " : "") + "CodeForge";
+        Title = designerTitle + (document != null ? document.DisplayName + (document.IsDirty ? " ●" : "") + " - " : "") + (workspace != null ? Path.GetFileName(workspace.TrimEnd('\\')) + " - " : "") + "Kryndev";
         var plan = CustomRunCommand == null ? ProjectRunPlan() : null;
         StartLabel.Text = CustomRunCommand != null || plan != null ? Path.GetFileName(workspace!.TrimEnd('\\')) : document?.DisplayName ?? "Start";
         StartButton.ToolTip = plan != null ? $"Start {plan.Name}: {plan.Run} (F5 debugs, Ctrl+F5 runs without debugging)" : "Start (F5)";

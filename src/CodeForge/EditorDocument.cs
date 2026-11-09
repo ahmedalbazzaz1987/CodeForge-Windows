@@ -138,7 +138,7 @@ public sealed class EditorDocument
         var info = new FileInfo(path);
         if (info.Length > 30_000_000) throw new IOException("The file is larger than 30 MB.");
         var bytes = File.ReadAllBytes(path);
-        if (bytes.AsSpan(0, Math.Min(bytes.Length, 8000)).Contains((byte)0)) throw new IOException("This looks like a binary file, so CodeForge won't open it as text.");
+        if (bytes.AsSpan(0, Math.Min(bytes.Length, 8000)).Contains((byte)0)) throw new IOException("This looks like a binary file, so Kryndev won't open it as text.");
         using var reader = new StreamReader(new MemoryStream(bytes), new UTF8Encoding(false), detectEncodingFromByteOrderMarks: true);
         var text = reader.ReadToEnd();
         var document = new EditorDocument(System.IO.Path.GetFullPath(path), text) { encoding = reader.CurrentEncoding };

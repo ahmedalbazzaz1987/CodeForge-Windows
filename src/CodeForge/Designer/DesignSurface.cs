@@ -592,7 +592,7 @@ public sealed class DesignSurface : UserControl
         // The form's outer Size is written as ClientSize, like Visual Studio does.
         if (isForm && property == "Size") { property = "ClientSize"; value = sandbox.ClientSize; }
         var code = WinFormsValues.Serialize(value, Design);
-        if (code == null) return $"CodeForge can't save the {property} property yet. Set it in code instead (in the form's Load event, for example).";
+        if (code == null) return $"Kryndev can't save the {property} property yet. Set it in code instead (in the form's Load event, for example).";
         document.Snapshot();
         if (isForm) Design.SetFormProperty(property, code); else Design.Control(selected!)!.Set(property, code);
         // Auto-sized controls change size when their text or font changes; keep the written Size in step.

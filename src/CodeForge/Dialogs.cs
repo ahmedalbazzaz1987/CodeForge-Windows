@@ -254,7 +254,7 @@ public static class StartPageView
         var title = new StackPanel { Orientation = Orientation.Horizontal };
         title.Children.Add(new Image { Source = new BitmapImage(new Uri("pack://application:,,,/Logo.png")), Width = 56, Height = 56, Margin = new Thickness(0, 0, 14, 0) });
         var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        words.Children.Add(new TextBlock { Text = "CodeForge", FontSize = 30, FontWeight = FontWeights.Light });
+        words.Children.Add(new TextBlock { Text = "Kryndev", FontSize = 30, FontWeight = FontWeights.Light });
         var version = new TextBlock { Text = $"Version {Updater.CurrentVersion} for Windows  ·  by Ahmed Al-Bazzaz" };
         version.SetResourceReference(TextBlock.ForegroundProperty, "SubtleTextBrush");
         words.Children.Add(version);

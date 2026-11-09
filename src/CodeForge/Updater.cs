@@ -41,12 +41,12 @@ public static class Updater
         }
         if (release == null || !(release.Version > CurrentVersion))
         {
-            if (userInitiated) MessageBox.Show(owner, $"CodeForge {CurrentVersion} is the latest version.", "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (userInitiated) MessageBox.Show(owner, $"Kryndev {CurrentVersion} is the latest version.", "Check for Updates", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         var notes = ReleaseNotes.Unwrapped(release.Notes).Replace("**", "").Replace("`", "");
         if (notes.Length > 1200) notes = notes[..1200] + "…";
-        var answer = MessageBox.Show(owner, $"CodeForge {release.Version} is available (you have {CurrentVersion}).\n\n{notes}\n\nInstall it now? CodeForge will restart.",
+        var answer = MessageBox.Show(owner, $"Kryndev {release.Version} is available (you have {CurrentVersion}).\n\n{notes}\n\nInstall it now? Kryndev will restart.",
                                      "Update available", MessageBoxButton.YesNo, MessageBoxImage.Information);
         if (answer == MessageBoxResult.Yes) await InstallAsync(owner, release);
     }
@@ -75,7 +75,7 @@ public static class Updater
         {
             var work = Path.Combine(Path.GetTempPath(), "CodeForge-update-" + release.Version);
             Directory.CreateDirectory(work);
-            var setup = await DownloadVerified(release.SetupUrl!, release.SetupChecksumUrl!, Path.Combine(work, $"CodeForge-{release.Version}-setup.exe"));
+            var setup = await DownloadVerified(release.SetupUrl!, release.SetupChecksumUrl!, Path.Combine(work, $"Kryndev-{release.Version}-setup.exe"));
             var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
             // Installed for all users (in Program Files): the setup has to ask for administrator rights again.
             var scope = AppContext.BaseDirectory.StartsWith(programFiles, StringComparison.OrdinalIgnoreCase) ? "/ALLUSERS" : "/CURRENTUSER";

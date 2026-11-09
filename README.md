@@ -1,7 +1,9 @@
-# CodeForge for Windows
+# Kryndev for Windows
+
+> Formerly **CodeForge**. Only the name changed: settings, updates and the GitHub repositories stay the same.
 
 A small, self-updating, Visual Studio-style IDE for Windows, written in C# with WPF. It's the Windows version of
-[CodeForge for Mac](https://github.com/ahmedalbazzaz1987/CodeForge).
+[Kryndev for Mac](https://github.com/ahmedalbazzaz1987/CodeForge).
 
 - **Visual Studio layout**: Toolbox, Solution Explorer, editor tabs, Output / Error List / Task List / Terminal, menus in
   Visual Studio's order, a Debug / Release box and a colored status bar.
@@ -20,7 +22,7 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
   Step Over/Into/Out (F10/F11/Shift+F11), Locals, Call Stack and expression evaluation; Ctrl+F5 runs without debugging.
 - **IntelliSense**: completion lists, Quick Info, Go To Definition (F12), Find All References (Shift+F12) and live
   errors from language servers (clangd, Pyright/Jedi, TypeScript, csharp-ls, FsAutoComplete, gopls, rust-analyzer,
-  JDT LS, SourceKit-LSP), which CodeForge can install for you; keywords, snippets and words for the rest.
+  JDT LS, SourceKit-LSP), which Kryndev can install for you; keywords, snippets and words for the rest.
 - **Git Changes and refactoring**: stage, commit, fetch, pull, push, branches, history and blame; Rename, Extract
   Method and Quick Actions (Ctrl+.).
 - **Class View, Object Browser and Server Explorer**: browse the project's types and members; connect to SQLite,
@@ -35,18 +37,18 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
 
 ## Install
 
-1. Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (it includes the Desktop Runtime CodeForge needs,
+1. Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (it includes the Desktop Runtime Kryndev needs,
    and builds your .NET projects): `winget install Microsoft.DotNet.SDK.10`
-2. Download **`CodeForge-<version>-setup.exe`** from the [latest release](https://github.com/ahmedalbazzaz1987/CodeForge-Windows/releases/latest)
-   and run it. It installs for your user account (no administrator rights needed), adds CodeForge to the Start menu,
-   can add a desktop shortcut and an **Open with CodeForge** item when you right-click a folder, and appears in
+2. Download **`Kryndev-<version>-setup.exe`** from the [latest release](https://github.com/ahmedalbazzaz1987/CodeForge-Windows/releases/latest)
+   and run it. It installs for your user account (no administrator rights needed), adds Kryndev to the Start menu,
+   can add a desktop shortcut and an **Open with Kryndev** item when you right-click a folder, and appears in
    **Settings ▸ Apps** so you can uninstall it like any other program.
 3. Windows SmartScreen may warn the first time because the installer isn't signed yet: click **More info ▸ Run anyway**.
 
-CodeForge updates itself: **Help ▸ Check for Updates** (or the daily check) downloads the new setup, checks its SHA-256
-and installs it quietly, then starts CodeForge again.
+Kryndev updates itself: **Help ▸ Check for Updates** (or the daily check) downloads the new setup, checks its SHA-256
+and installs it quietly, then starts Kryndev again.
 
-A portable version (`CodeForge-<version>-windows.zip`, no installation) is in each release too.
+A portable version (`Kryndev-<version>-windows.zip`, no installation) is in each release too.
 
 ## Shortcuts
 
@@ -102,4 +104,4 @@ scripts/              screenshots.ps1
 
 ## License
 
-GPL-3.0. Copyright © 2026 Ahmed Al-Bazzaz. You may use, change and share CodeForge; versions you share must stay open source under the same license. See [LICENSE](LICENSE).
+GPL-3.0. Copyright © 2026 Ahmed Al-Bazzaz. You may use, change and share Kryndev; versions you share must stay open source under the same license. See [LICENSE](LICENSE).

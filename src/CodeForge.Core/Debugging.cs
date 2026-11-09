@@ -328,7 +328,7 @@ public sealed class DebugSession
         if (!adapter.Start(Configuration.Adapter, Configuration.AdapterArguments, Configuration.Environment, Configuration.UsesSocket)) return false;
         adapter.Request("initialize", new JsonObject
         {
-            ["clientID"] = "codeforge", ["clientName"] = "CodeForge", ["adapterID"] = Configuration.AdapterId,
+            ["clientID"] = "codeforge", ["clientName"] = "Kryndev", ["adapterID"] = Configuration.AdapterId,
             ["linesStartAt1"] = true, ["columnsStartAt1"] = true, ["pathFormat"] = "path",
             ["supportsVariableType"] = true, ["supportsRunInTerminalRequest"] = false,
         });

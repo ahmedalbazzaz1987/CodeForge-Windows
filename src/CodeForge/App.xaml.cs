@@ -38,7 +38,7 @@ public partial class App : Application
             Console.Error.WriteLine(e.Exception);
             Environment.Exit(3);
         }
-        MessageBox.Show(e.Exception.Message, "CodeForge", MessageBoxButton.OK, MessageBoxImage.Warning);
+        MessageBox.Show(e.Exception.Message, "Kryndev", MessageBoxButton.OK, MessageBoxImage.Warning);
         e.Handled = true;
     }
 }

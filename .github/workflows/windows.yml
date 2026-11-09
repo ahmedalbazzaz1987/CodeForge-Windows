@@ -55,7 +55,7 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content VERSION).Trim()
-          $zip = "CodeForge-$version-windows.zip"
+          $zip = "Kryndev-$version-windows.zip"
           Compress-Archive -Path publish/CodeForge -DestinationPath $zip
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           "$hash  $zip" | Out-File -Encoding ascii "$zip.sha256"
@@ -72,7 +72,7 @@ jobs:
           if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           & $iscc /Qp "/DAppVersion=$version" "/DSourceDir=$PWD\publish\CodeForge" installer\CodeForge.iss
           if ($LASTEXITCODE -ne 0) { throw "The installer didn't build" }
-          $setup = "CodeForge-$version-setup.exe"
+          $setup = "Kryndev-$version-setup.exe"
           Move-Item "dist\$setup" $setup
           $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
           "$hash  $setup" | Out-File -Encoding ascii "$setup.sha256"
@@ -88,13 +88,13 @@ jobs:
           foreach ($file in "CodeForge.exe", "CodeForge.Core.dll", "ICSharpCode.AvalonEdit.dll", "unins000.exe") {
             if (-not (Test-Path (Join-Path $dir $file))) { throw "Setup didn't install $file" }
           }
-          $shortcut = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\CodeForge.lnk"
+          $shortcut = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Kryndev.lnk"
           if (-not (Test-Path $shortcut)) { throw "No Start menu shortcut" }
           if (-not (Test-Path "Registry::HKEY_CURRENT_USER\Software\Classes\Directory\shell\CodeForge\command")) { throw "No Open with CodeForge entry" }
           New-Item -ItemType Directory -Force screenshots | Out-Null
           $env:CF_SNAPSHOT = Join-Path $PWD "screenshots\9-installed.png"; $env:CF_FRESH = "1"; $env:CF_SETTINGS_DIR = Join-Path $env:RUNNER_TEMP "cf-installed-settings"
           $app = Start-Process -FilePath (Join-Path $dir "CodeForge.exe") -PassThru
-          if (-not $app.WaitForExit(120000) -or $app.ExitCode -ne 0) { throw "The installed CodeForge didn't start properly" }
+          if (-not $app.WaitForExit(120000) -or $app.ExitCode -ne 0) { throw "The installed Kryndev didn't start properly" }
           Remove-Item env:CF_SNAPSHOT, env:CF_FRESH, env:CF_SETTINGS_DIR
           $u = Start-Process -FilePath (Join-Path $dir "unins000.exe") -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
           Start-Sleep -Seconds 3
@@ -113,8 +113,8 @@ jobs:
         with:
           name: CodeForge-windows
           path: |
-            CodeForge-*-windows.zip*
-            CodeForge-*-setup.exe*
+            Kryndev-*-windows.zip*
+            Kryndev-*-setup.exe*
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -127,5 +127,5 @@ jobs:
           # Release notes: this version's section of CHANGELOG.md.
           $notes = (Get-Content CHANGELOG.md -Raw) -split "(?m)^## " | Where-Object { $_ -match "^$([regex]::Escape($version))\s" } | Select-Object -First 1
           $notes = ($notes -replace "^\S+\s*", "").Trim()
-          if (-not $notes) { $notes = "CodeForge $version for Windows" }
-          gh release create "${{ github.ref_name }}" $env:SETUP "$env:SETUP.sha256" $env:ZIP "$env:ZIP.sha256" --title "CodeForge $version for Windows" --notes $notes
+          if (-not $notes) { $notes = "Kryndev $version for Windows" }
+          gh release create "${{ github.ref_name }}" $env:SETUP "$env:SETUP.sha256" $env:ZIP "$env:ZIP.sha256" --title "Kryndev $version for Windows" --notes $notes

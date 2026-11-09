@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.0
+
+- **CodeForge is now Kryndev**, with a new icon. Only the name changed: features, settings, projects and updates stay
+  as they were. The update installs over the existing copy and replaces the CodeForge shortcuts with Kryndev ones.
+
 ## 0.9.4
 
 - GDB's pending-breakpoint notes are really hidden now: GDB sends them as program output, which 0.9.3 let through.

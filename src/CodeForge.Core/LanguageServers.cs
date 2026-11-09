@@ -93,19 +93,19 @@ public static class LanguageServerSpecs
     [
         new("clangd", "clangd", ["c", "cpp"], ["clangd"], Llvm, Arguments: ["--background-index=false"]),
         new("sourcekit-lsp", "SourceKit-LSP", ["swift"], ["sourcekit-lsp"], "Install Swift for Windows from swift.org (it includes SourceKit-LSP)."),
-        new("pyright", "Pyright", ["python"], ["pyright-langserver"], "CodeForge can install it for you (needs Node.js: winget install OpenJS.NodeJS.LTS).",
+        new("pyright", "Pyright", ["python"], ["pyright-langserver"], "Kryndev can install it for you (needs Node.js: winget install OpenJS.NodeJS.LTS).",
             Arguments: ["--stdio"], NpmPackages: ["pyright"], DownloadSize: "about 20 MB"),
         // Without Node.js, Python files get Jedi's server, installed with pip like the debugger.
-        new("jedi", "Jedi", ["python"], [], "CodeForge can install it for you with pip.",
+        new("jedi", "Jedi", ["python"], [], "Kryndev can install it for you with pip.",
             PipPackage: "jedi-language-server", PythonStart: "import sys; from jedi_language_server.cli import cli; sys.exit(cli())",
             // Jedi stores files by their decoded URI but looks them up undecoded: escaped ones (Arabic, spaces) never get errors.
             DownloadSize: "about 10 MB", PlainUris: true),
         // TypeScript 7 has a built-in language server for JavaScript and TypeScript.
-        new("typescript", "TypeScript", ["javascript", "typescript"], ["tsc"], "CodeForge can install it for you (needs Node.js: winget install OpenJS.NodeJS.LTS).",
+        new("typescript", "TypeScript", ["javascript", "typescript"], ["tsc"], "Kryndev can install it for you (needs Node.js: winget install OpenJS.NodeJS.LTS).",
             Arguments: ["--lsp", "--stdio"], InstalledCopyOnly: true, NpmPackages: ["typescript@7"], DownloadSize: "about 30 MB"),
-        new("csharp-ls", "csharp-ls", ["csharp"], ["csharp-ls"], "CodeForge can install it for you (needs the .NET SDK).",
+        new("csharp-ls", "csharp-ls", ["csharp"], ["csharp-ls"], "Kryndev can install it for you (needs the .NET SDK).",
             DotNetTool: "csharp-ls", DownloadSize: "about 40 MB"),
-        new("fsautocomplete", "FsAutoComplete", ["fsharp"], ["fsautocomplete"], "CodeForge can install it for you (needs the .NET SDK).",
+        new("fsautocomplete", "FsAutoComplete", ["fsharp"], ["fsautocomplete"], "Kryndev can install it for you (needs the .NET SDK).",
             DotNetTool: "fsautocomplete", DownloadSize: "about 60 MB",
             // Otherwise it waits for the client to pick a project (fsharp/workspaceLoad), as Ionide does.
             InitializationOptions: """{ "AutomaticWorkspaceInit": true }"""),
@@ -500,7 +500,7 @@ public sealed class LanguageClient(Action<Action> post)
             ["rootUri"] = rootUri,
             ["rootPath"] = root,
             ["workspaceFolders"] = new JsonArray(new JsonObject { ["uri"] = rootUri, ["name"] = Path.GetFileName(root.TrimEnd('\\', '/')) }),
-            ["clientInfo"] = new JsonObject { ["name"] = "CodeForge" },
+            ["clientInfo"] = new JsonObject { ["name"] = "Kryndev" },
             ["capabilities"] = capabilities,
         };
         if (launch.InitializationOptions != null) parameters["initializationOptions"] = JsonNode.Parse(launch.InitializationOptions);
