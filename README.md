@@ -1,6 +1,6 @@
 # Kryndev for Windows
 
-> Formerly **CodeForge**. Only the name changed: settings, updates and the GitHub repositories stay the same.
+> Formerly **CodeForge**. Only the name changed: settings, updates and the GitHub repositories stay the same. See the [renaming notice](RENAMING-NOTICE.md).
 
 A small, self-updating, Visual Studio-style IDE for Windows, written in C# with WPF. It's the Windows version of
 [Kryndev for Mac](https://github.com/ahmedalbazzaz1987/CodeForge).
