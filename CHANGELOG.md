@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.3
+
+- GDB's "No source file named…" and "Breakpoint 1 (…) pending." notes no longer appear in Output when debugging starts:
+  they only meant GDB hadn't loaded the program yet.
+
 ## 0.9.2
 
 - Debugging sends only the breakpoints of files that still exist and that the debugger reads (GDB no longer gets

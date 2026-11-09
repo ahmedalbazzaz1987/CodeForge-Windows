@@ -368,6 +368,8 @@ public sealed class DebugSession
                 var category = (string?)body["category"] ?? "console";
                 if (category == "telemetry") return;
                 var isProgram = category is "stdout" or "stderr";
+                // Breakpoints are sent before GDB has loaded the program, so it reports each one as pending first.
+                if (!isProgram && DebugTools.IsPendingBreakpointNote(text)) return;
                 // The debugger's own messages can lack a line ending; the program's next line would join on to them.
                 if (!isProgram && !text.EndsWith('\n')) text += "\n";
                 Output?.Invoke(text, category == "stderr" ? DebugOutputKind.Error : isProgram ? DebugOutputKind.Program : DebugOutputKind.Info);
@@ -570,6 +572,10 @@ public static class DebugTools
             ["stopOnEntry"] = false,
         })
         { SourceExtensions = NativeSources, SourceFolder = folder };
+
+    /// <summary>GDB's "No source file named main.c." and "Breakpoint 1 (-source main.c -line 6) pending." notes.</summary>
+    public static bool IsPendingBreakpointNote(string text) =>
+        text.Trim().Split('\n').All(line => Regex.IsMatch(line.Trim(), @"^(No source file named .+\.|Breakpoint \d+ \(.+\) pending\.|)$"));
 
     /// <summary>The source files a native debugger can stop in.</summary>
     public static readonly HashSet<string> NativeSources = [".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".rs", ".swift", ".m", ".mm"];

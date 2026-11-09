@@ -131,6 +131,14 @@ public class DebuggingTests
     }
 
     [Fact]
+    public void HidesGdbsPendingBreakpointNotes()
+    {
+        Assert.True(DebugTools.IsPendingBreakpointNote("No source file named main.c.\n"));
+        Assert.True(DebugTools.IsPendingBreakpointNote("Breakpoint 1 (-source main.c -line 6) pending.\n"));
+        Assert.False(DebugTools.IsPendingBreakpointNote("Program received signal SIGSEGV\n"));
+    }
+
+    [Fact]
     public void ReadsGdbsVersion()
     {
         Assert.Equal(15, NativeDebugging.ParseGdbVersion("GNU gdb (GDB) 15.2\nCopyright (C) 2024"));
