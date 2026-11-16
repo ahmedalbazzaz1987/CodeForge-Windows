@@ -23,6 +23,9 @@ A small, self-updating, Visual Studio-style IDE for Windows, written in C# with 
 - **IntelliSense**: completion lists, Quick Info, Go To Definition (F12), Find All References (Shift+F12) and live
   errors from language servers (clangd, Pyright/Jedi, TypeScript, csharp-ls, FsAutoComplete, gopls, rust-analyzer,
   JDT LS, SourceKit-LSP), which Kryndev can install for you; keywords, snippets and words for the rest.
+- **Help for learners**: Parameter Info (Ctrl+Shift+Space) shows how to call the function you're in; the completion
+  list explains the selected item (keywords and CSS properties included); snippets have fields to Tab through; and
+  common errors are explained in plain words in Quick Info and the Error List.
 - **Git Changes and refactoring**: stage, commit, fetch, pull, push, branches, history and blame; Rename, Extract
   Method and Quick Actions (Ctrl+.).
 - **Class View, Object Browser and Server Explorer**: browse the project's types and members; connect to SQLite,
