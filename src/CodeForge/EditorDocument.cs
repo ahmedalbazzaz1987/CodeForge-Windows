@@ -435,7 +435,7 @@ public sealed class DiagnosticRenderer(TextEditor editor) : IBackgroundRenderer
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
         if (marks.Count == 0 || !textView.VisualLinesValid) return;
-        foreach (var (segment, severity, _) in marks)
+        foreach (var (segment, severity, _, _) in marks)
         {
             var color = severity == Severity.Error ? Color.FromRgb(0xE5, 0x14, 0x00) : Color.FromRgb(0xCC, 0xA7, 0x00);
             var pen = new Pen(new SolidColorBrush(color), 1);
