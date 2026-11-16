@@ -124,6 +124,18 @@ $text = Report "23-python-definition" @{ CF_OPEN = "$sense;$sense\main.py"; CF_A
 if ($text -notmatch "main.py:3") { $failed += "Go To Definition (Jedi) didn't reach line 3" }
 if ($text -notmatch "(?s)FINDRESULTS:.*main.py:3.*main.py:7") { $failed += "Find All References (Jedi)" }
 
+# Parameter Info: from Jedi (signatureHelp), and without a server from the .NET catalog (VB.NET); errors explained in plain words.
+Set-Content "$sense\calls.py" "def area(width, height):`r`n    return width * height`r`n`r`narea(3, `r`n"
+$text = Report "23b-python-parameter-info" @{ CF_OPEN = "$sense;$sense\calls.py"; CF_ACTIONS = "caret:area(3, ,paraminfo,dump"; CF_ACTION_GAP = "5"; CF_DELAY = "3" }
+if ($text -notmatch "PARAMINFO: .*\[height\]") { $failed += "Parameter Info (Jedi)"; Write-Host ($text -split "`n" | Select-String "PARAMINFO") }
+$params = "$work\Params"
+New-Item -ItemType Directory -Force $params | Out-Null
+Set-Content "$params\Program.vb" "Module Program`r`n    Sub Main()`r`n        Dim r As New Random()`r`n        Dim n = r.Next(1, `r`n    End Sub`r`nEnd Module`r`n"
+$text = Report "23c-vb-parameter-info" @{ CF_OPEN = "$params;$params\Program.vb"; CF_ACTIONS = "caret:r.Next(1, ,paraminfo,dump"; CF_DELAY = "3" }
+if ($text -notmatch "PARAMINFO: Next\(minValue As Integer, \[maxValue As Integer\]\)") { $failed += "Parameter Info (VB, no server)"; Write-Host ($text -split "`n" | Select-String "PARAMINFO") }
+$text = Report "23d-error-explained" @{ CF_OPEN = "$sense;$sense\main.py"; CF_ACTIONS = "errors,dump"; CF_ACTION_GAP = "6"; CF_DELAY = "3" }
+if ($text -notmatch "main.py:9:.*\| ") { $failed += "No plain-language explanation for the Python error"; Write-Host ($text -split "`n" | Select-String "main.py:9") }
+
 # Refactoring: Extract Method (VB.NET, no server), Rename without a server (C#) and with one (Jedi).
 $refactor = "$work\Refactor"
 New-Item -ItemType Directory -Force $refactor | Out-Null

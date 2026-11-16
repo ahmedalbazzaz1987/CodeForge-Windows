@@ -3,12 +3,13 @@ namespace CodeForge.Core;
 /// <summary>Something you can double-click or drag from the Toolbox into the editor. <c>$0</c> marks where the cursor goes.</summary>
 public sealed record ToolboxItem(string Name, string Glyph, string Snippet)
 {
-    /// <summary>The snippet as inserted on a line indented with <paramref name="indent"/>, and the cursor offset in it.</summary>
+    /// <summary>The text as inserted at a line indented with <paramref name="indent"/>, and where the caret goes: the first field
+    /// to fill in, else <c>$0</c>, else the end (see <see cref="SnippetTemplate"/>).</summary>
     public (string Text, int Cursor) Expanded(string indent)
     {
-        var text = Snippet.Replace("\n", "\n" + indent);
-        var marker = text.IndexOf("$0", StringComparison.Ordinal);
-        return marker < 0 ? (text, text.Length) : (text.Remove(marker, 2), marker);
+        var (text, fields) = SnippetTemplate.Expand(Snippet, indent);
+        var first = fields.Where(f => f.Index > 0).OrderBy(f => f.Index).FirstOrDefault() ?? fields.FirstOrDefault(f => f.Index == 0);
+        return (text, first?.Start ?? text.Length);
     }
 }
 

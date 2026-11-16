@@ -263,9 +263,11 @@ public static partial class HoverText
 
 /// <summary>An entry in the completion list. <see cref="Kind"/> is LSP's CompletionItemKind.</summary>
 /// <param name="ReplaceStart">Where the server wants the text replaced from, if it said.</param>
-/// <param name="Snippet">A code snippet's body (<c>$0</c> marks the caret): accepting the item expands it.</param>
+/// <param name="Snippet">A code snippet's body (see <see cref="SnippetTemplate"/>): accepting the item expands it.</param>
+/// <param name="Documentation">What the item is, shown beside the list; null until the server is asked (see <see cref="Raw"/>).</param>
+/// <param name="Raw">The server's item, to ask it for the documentation with completionItem/resolve.</param>
 public sealed record CompletionEntry(string Label, string Detail, int Kind, string Text, string FilterText, string SortText,
-    int? ReplaceStart = null, string? Snippet = null);
+    int? ReplaceStart = null, string? Snippet = null, string? Documentation = null, JsonObject? Raw = null);
 
 /// <summary>A place in a file: 1-based line and column.</summary>
 public sealed record CodeLocation(string Path, int Line, int Column);
@@ -289,12 +291,28 @@ public static partial class LspResults
                 if (range?["start"] is JsonObject start && Int(start["line"]) is { } line && Int(start["character"]) is { } character)
                     replaceStart = lines.Offset(line, character);
             }
-            if (Int(item["insertTextFormat"]) == 2) text = StripSnippet(text);
+            // A snippet with fields to fill in is expanded on Tab or Enter; typing ( or . keeps just the name.
+            string? snippet = null;
+            if (Int(item["insertTextFormat"]) == 2)
+            {
+                if (SnippetTemplate.HasFields(text)) snippet = text;
+                text = StripSnippet(text);
+            }
             label = label.Trim();
+            var documentation = Documentation(item["documentation"]);
             entries.Add(new CompletionEntry(label, Text(item["detail"]) ?? Text(item["labelDetails"]?["description"]) ?? "", Int(item["kind"]) ?? 0,
-                text, Text(item["filterText"]) ?? label, Text(item["sortText"]) ?? label, replaceStart));
+                text, Text(item["filterText"]) ?? label, Text(item["sortText"]) ?? label, replaceStart, snippet, documentation, item));
         }
         return entries;
+    }
+
+    /// <summary>Documentation as a string or MarkupContent, as plain text (null if there is none).</summary>
+    public static string? Documentation(JsonNode? node)
+    {
+        var text = node switch { JsonObject markup => Text(markup["value"]), JsonValue value => Text(value), _ => null };
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var plain = HoverText.Plain(text);
+        return plain.Length == 0 ? null : plain;
     }
 
     public static string? Hover(JsonNode? result)
@@ -376,11 +394,8 @@ public static partial class LspResults
             .OrderByDescending(a => a.IsPreferred).ThenBy(a => a.Kind.StartsWith("quickfix") ? 0 : 1)
             .ToList() ?? [];
 
-    [GeneratedRegex(@"\$\{\d+:([^}]*)\}|\$\{\d+\}|\$\d+")]
-    private static partial Regex SnippetField();
-
     /// <summary>"print(${1:value})$0" → "print(value)"</summary>
-    public static string StripSnippet(string text) => SnippetField().Replace(text, "$1");
+    public static string StripSnippet(string text) => SnippetTemplate.PlainText(text);
 
     private static string? Text(JsonNode? node) => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
@@ -404,6 +419,10 @@ public sealed class LanguageClient(Action<Action> post)
     public Dictionary<string, JsonArray> RawDiagnostics { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public HashSet<string> TriggerCharacters { get; private set; } = ["."];
+    /// <summary>Characters that open (or move along) Parameter Info; null if the server has no signature help.</summary>
+    public HashSet<string>? SignatureTriggerCharacters { get; private set; }
+    /// <summary>The server fills in an item's documentation when asked (completionItem/resolve).</summary>
+    public bool ResolvesCompletions { get; private set; }
     public bool PullsDiagnostics { get; private set; }
     public bool IsRunning { get; private set; }
     /// <summary>Send file URIs unescaped (see <see cref="LanguageServerSpec.PlainUris"/>).</summary>
@@ -478,7 +497,8 @@ public sealed class LanguageClient(Action<Action> post)
               "general": { "positionEncodings": ["utf-16"] },
               "textDocument": {
                 "synchronization": { "didSave": true, "dynamicRegistration": false },
-                "completion": { "completionItem": { "snippetSupport": false, "documentationFormat": ["markdown", "plaintext"] } },
+                "completion": { "completionItem": { "snippetSupport": true, "documentationFormat": ["markdown", "plaintext"], "resolveSupport": { "properties": ["documentation", "detail"] } } },
+                "signatureHelp": { "signatureInformation": { "documentationFormat": ["markdown", "plaintext"], "parameterInformation": { "labelOffsetSupport": true }, "activeParameterSupport": true } },
                 "hover": { "contentFormat": ["markdown", "plaintext"] },
                 "definition": { "linkSupport": true },
                 "references": {},
@@ -511,6 +531,11 @@ public sealed class LanguageClient(Action<Action> post)
             if (serverCapabilities?["completionProvider"]?["triggerCharacters"] is JsonArray characters)
                 TriggerCharacters = characters.Select(c => c?.ToString() ?? "").Where(c => c.Trim().Length > 0).ToHashSet();
             PullsDiagnostics = serverCapabilities?["diagnosticProvider"] != null;
+            ResolvesCompletions = serverCapabilities?["completionProvider"]?["resolveProvider"]?.GetValue<bool>() == true;
+            if (serverCapabilities?["signatureHelpProvider"] is JsonObject signatureHelp)
+                SignatureTriggerCharacters = ((signatureHelp["triggerCharacters"] as JsonArray)?.Select(c => c?.ToString() ?? "") ?? ["(", ","])
+                    .Concat((signatureHelp["retriggerCharacters"] as JsonArray)?.Select(c => c?.ToString() ?? "") ?? [])
+                    .Where(c => c.Length > 0).ToHashSet();
             Write(new JsonObject { ["jsonrpc"] = "2.0", ["method"] = "initialized", ["params"] = new JsonObject() });
             ready = true;
             foreach (var message in queued) Write(message);
@@ -692,6 +717,22 @@ public sealed class LanguageDocument
     {
         var lines = new TextLines(text());
         Client.Request("textDocument/completion", At(offset), result => handler(LspResults.Completions(result, lines)));
+    }
+
+    /// <summary>Parameter Info at an offset: the signatures, the active one and the active parameter.</summary>
+    public void SignatureHelp(int offset, Action<(List<SignatureInfo> Signatures, int Active, int Parameter)> handler)
+    {
+        var parameters = At(offset);
+        parameters["context"] = new JsonObject { ["triggerKind"] = 1, ["isRetrigger"] = false };
+        Client.Request("textDocument/signatureHelp", parameters, result => handler(ParameterInfo.FromLsp(result)));
+    }
+
+    /// <summary>Asks the server for an item's documentation (and fuller detail); the handler gets null if it has none.</summary>
+    public void Resolve(CompletionEntry entry, Action<string?, string?> handler)
+    {
+        if (entry.Raw == null || !Client.ResolvesCompletions) { handler(null, null); return; }
+        Client.Request("completionItem/resolve", (JsonObject)entry.Raw.DeepClone(), result =>
+            handler(LspResults.Documentation(result?["documentation"]), result?["detail"] is JsonValue detail ? detail.ToString() : null));
     }
 
     public void Hover(int offset, Action<string?> handler) =>

@@ -252,6 +252,19 @@ public static class DotNetIntelliSense
         return items.GroupBy(i => i.Label.ToLowerInvariant()).Select(g => g.First()).OrderBy(i => i.Label, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    /// <summary>The signatures of the methods called <paramref name="name"/> on <c>a.b</c> (every overload), for Parameter Info.</summary>
+    public static List<string> MethodSignatures(List<string> expression, string name, string text, int offset, string languageId, IReadOnlyList<CodeSymbol> symbols)
+    {
+        var comparison = languageId == "vb" ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var target = Resolve(expression, text, offset, languageId, symbols);
+        if (target is not (TypeTarget or Instance)) return [];
+        var typeName = DotNetCatalog.BaseName(target is TypeTarget t ? t.Type : ((Instance)target).Type);
+        var project = symbols.Where(s => string.Equals(s.Container, typeName, StringComparison.OrdinalIgnoreCase) && string.Equals(s.Name, name, comparison) &&
+                                         s.Kind is SymbolKind.Method or SymbolKind.Function).Select(s => s.Signature).ToList();
+        if (project.Count > 0) return project;
+        return DotNetCatalog.Type(typeName)?.Members.Where(m => m.IsMethod && string.Equals(m.Name, name, comparison)).Select(m => m.Signature).ToList() ?? [];
+    }
+
     /// <summary>Works out the type of <c>a.b.c</c> step by step.</summary>
     private static Target? Resolve(List<string> expression, string text, int offset, string languageId, IReadOnlyList<CodeSymbol> symbols)
     {

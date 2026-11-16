@@ -24,6 +24,8 @@ public sealed record ErrorRow(Core.Diagnostic Diagnostic, string FullPath)
     public string Message => Diagnostic.Message;
     public string FileName => System.IO.Path.GetFileName(FullPath);
     public int Line => Diagnostic.Line;
+    /// <summary>What the error means and how to fix it, in plain words (shown under the list for the selected error).</summary>
+    public string? Explanation => Core.ErrorExplanations.Explain(Diagnostic.Message, Diagnostic.Code, Core.Languages.ForFile(FullPath).Id);
 }
 
 /// <summary>A row in Find Results or the Task List.</summary>

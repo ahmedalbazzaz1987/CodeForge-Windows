@@ -127,6 +127,11 @@
                             </DockPanel>
                         </TabItem>
                         <TabItem x:Name="ErrorsTab" Header="Error List">
+                            <DockPanel>
+                            <Border x:Name="ErrorExplanationBar" DockPanel.Dock="Bottom" Visibility="Collapsed" Padding="10,5" BorderThickness="0,1,0,0"
+                                    BorderBrush="{DynamicResource BorderBrush}" Background="{DynamicResource PanelBrush}">
+                                <TextBlock x:Name="ErrorExplanation" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextBrush}"/>
+                            </Border>
                             <ListView x:Name="ErrorList" BorderThickness="0" Background="{DynamicResource EditorBrush}">
                                 <ListView.View>
                                     <GridView>
@@ -138,12 +143,19 @@
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
                                         <GridViewColumn Header="Code" Width="80" DisplayMemberBinding="{Binding Code}"/>
-                                        <GridViewColumn Header="Description" Width="420" DisplayMemberBinding="{Binding Message}"/>
+                                        <GridViewColumn Header="Description" Width="420">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Message}" ToolTip="{Binding Explanation}" TextTrimming="CharacterEllipsis"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
                                         <GridViewColumn Header="File" Width="140" DisplayMemberBinding="{Binding FileName}"/>
                                         <GridViewColumn Header="Line" Width="50" DisplayMemberBinding="{Binding Line}"/>
                                     </GridView>
                                 </ListView.View>
                             </ListView>
+                            </DockPanel>
                         </TabItem>
                         <TabItem x:Name="TaskListTab" Header="Task List">
                             <DockPanel>

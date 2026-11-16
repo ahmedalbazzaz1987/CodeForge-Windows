@@ -52,6 +52,15 @@ public sealed class IntelliSense
     private ToolTip? hoverTip;
     private int completionGeneration;
     private int hoverGeneration;
+    private OverloadInsightWindow? insight;
+    /// <summary>The "(" of the call Parameter Info shows, so arrowing to another overload sticks while typing in it.</summary>
+    private int insightParen = -1;
+    private int signatureGeneration;
+    private DispatcherTimer? signatureRefresh;
+    private readonly CompletionHistory history = new();
+
+    /// <summary>The signature Parameter Info shows, for scripts.</summary>
+    public string? ParameterInfoText => insight?.Provider is SignatureProvider provider ? provider.Text : null;
 
     /// <summary>Errors and warnings the language servers reported, by file.</summary>
     public IEnumerable<Diagnostic> LiveDiagnostics => live.Values.SelectMany(d => d);
@@ -70,6 +79,8 @@ public sealed class IntelliSense
     {
         var area = document.Editor.TextArea;
         area.TextEntered += (_, e) => TextEntered(document, e.Text);
+        area.Caret.PositionChanged += (_, _) => { if (insight != null && insight.TextArea == area) RefreshParameterInfoSoon(document); };
+        area.LostKeyboardFocus += (_, _) => { if (insight?.TextArea == area && !area.IsKeyboardFocusWithin) CloseParameterInfo(); };
         area.PreviewMouseDown += (_, _) => CloseHover();
         area.PreviewKeyDown += (_, _) => CloseHover();
         area.TextEntering += (_, e) =>
@@ -261,6 +272,9 @@ public sealed class IntelliSense
         if (text.Length != 1 || document.IsReadOnly) return;
         var typed = text[0];
         var triggers = sessions.TryGetValue(document, out var session) ? session.Client.TriggerCharacters : new HashSet<string> { "." };
+        // Parameter Info opens on ( and , and follows the caret through the arguments.
+        if (text is "(" or "," || session?.Client.SignatureTriggerCharacters?.Contains(text) == true) ShowParameterInfo(document, explicitly: false);
+        else if (insight != null) RefreshParameterInfoSoon(document);
         // Typed fast ("g."), the list for the word can still be open when the dot comes: the dot's list replaces it.
         if (completion != null)
         {
@@ -333,12 +347,111 @@ public sealed class IntelliSense
         window.CompletionList.ListBox.Background = window.Background;
         window.CompletionList.ListBox.Foreground = window.Foreground;
         window.CompletionList.ListBox.BorderThickness = new Thickness(0);
+        var languageId = document.Language.Id;
+        sessions.TryGetValue(document, out var session);
+        // Visual Studio's order (the server's, else A–Z); typing selects the best match, and of equal matches the one used last.
         foreach (var item in items.OrderBy(i => i.SortText, StringComparer.OrdinalIgnoreCase).ThenBy(i => i.Label, StringComparer.OrdinalIgnoreCase))
-            window.CompletionList.CompletionData.Add(new CompletionItem(item));
+            window.CompletionList.CompletionData.Add(new CompletionItem(item, languageId, history.Recency(languageId, item.Label))
+            {
+                Resolve = session != null ? new Action<CompletionEntry, Action<string?, string?>>(session.Resolve) : null,
+                Picked = picked =>
+                {
+                    history.Used(languageId, picked.Label);
+                    // A method accepted with its parentheses: show what goes in them.
+                    if (document.Editor.CaretOffset > 0 && ParameterInfo.CallAt(document.Editor.Text, document.Editor.CaretOffset, document.Language) != null)
+                        document.Editor.Dispatcher.BeginInvoke(new Action(() => ShowParameterInfo(document, explicitly: false)), DispatcherPriority.Background);
+                },
+            });
         window.Closed += (_, _) => { if (completion == window) completion = null; };
         completion = window;
         window.Show();
         if (typed.Length > 0) window.CompletionList.SelectItem(typed);
+    }
+
+    // MARK: Parameter Info
+
+    /// <summary>Parameter Info (Ctrl+Shift+Space): the ways to call the function the caret is in, its current argument in bold.</summary>
+    public void ShowParameterInfo(EditorDocument? document, bool explicitly = true)
+    {
+        if (document == null) return;
+        var editor = document.Editor;
+        var caret = editor.CaretOffset;
+        var text = editor.Text;
+        var call = ParameterInfo.CallAt(text, caret, document.Language);
+        var request = ++signatureGeneration;
+        void FromProject()
+        {
+            if (request != signatureGeneration) return;
+            if (call == null) { CloseParameterInfo(); if (explicitly) Status("No parameter info here: put the caret inside a call's parentheses"); return; }
+            var symbols = SymbolsFor(document) ?? SymbolParser.Symbols(text, document.Language.Id, document.Path);
+            var signatures = ParameterInfo.Basic(text, call, document.Language, symbols);
+            if (signatures.Count == 0) { CloseParameterInfo(); if (explicitly) Status($"No parameter info for “{call.Name}”"); return; }
+            PresentSignatures(document, signatures, ParameterInfo.BestOverload(signatures, call.Argument), call.Argument, call.NameStart, call.OpenParen);
+        }
+        if (sessions.TryGetValue(document, out var session) && session.Client.SignatureTriggerCharacters != null)
+        {
+            Flush(document);
+            session.SignatureHelp(caret, result =>
+            {
+                if (request != signatureGeneration || editor.CaretOffset != caret) return;
+                if (result.Signatures.Count == 0) { FromProject(); return; }
+                PresentSignatures(document, result.Signatures, result.Active, result.Parameter, call?.NameStart ?? caret, call?.OpenParen ?? -1);
+            });
+            return;
+        }
+        FromProject();
+    }
+
+    private void PresentSignatures(EditorDocument document, List<SignatureInfo> signatures, int active, int argument, int start, int paren)
+    {
+        var area = document.Editor.TextArea;
+        if (insight != null && insight.TextArea == area && insight.Provider is SignatureProvider shown)
+        {
+            // Same call and overloads: keep the one the user arrowed to.
+            var keep = paren == insightParen && shown.Count == signatures.Count ? shown.SelectedIndex : active;
+            shown.Update(signatures, keep, argument);
+            insightParen = paren;
+            return;
+        }
+        insight?.Close();
+        var window = new OverloadInsightWindow(area)
+        {
+            Provider = new SignatureProvider(signatures, active, argument),
+            CloseAutomatically = false,
+            StartOffset = Math.Min(start, area.Document.TextLength),
+            Background = (Brush)Application.Current.Resources["PanelBrush"],
+            Foreground = (Brush)Application.Current.Resources["TextBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["BorderBrush"],
+            MaxWidth = 640,
+        };
+        window.Closed += (_, _) => { if (insight == window) { insight = null; insightParen = -1; } };
+        insight = window;
+        insightParen = paren;
+        window.Show();
+    }
+
+    private void RefreshParameterInfoSoon(EditorDocument document)
+    {
+        if (signatureRefresh == null)
+        {
+            signatureRefresh = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+            signatureRefresh.Tick += (_, _) =>
+            {
+                signatureRefresh.Stop();
+                if (insight != null && signatureRefresh.Tag is EditorDocument target) ShowParameterInfo(target, explicitly: false);
+            };
+        }
+        signatureRefresh.Tag = document;
+        signatureRefresh.Stop();
+        signatureRefresh.Start();
+    }
+
+    public void CloseParameterInfo()
+    {
+        signatureGeneration++;
+        insight?.Close();
+        insight = null;
+        insightParen = -1;
     }
 
     // MARK: Quick Info
@@ -378,15 +491,24 @@ public sealed class IntelliSense
             }
             hoverTip.IsOpen = true;
         }
+        // For a keyword (void, let, padding…) the servers have nothing to say: one line on what it means.
+        string? Guide()
+        {
+            if (WordAt(document.Editor.Text, at) is not { } word || BasicIntelliSense.InStringOrComment(document.Editor.Text, word.Start, document.Language)) return null;
+            var keywords = BasicIntelliSense.Keywords(document.Language);
+            var isKeyword = keywords.Contains(word.Text, document.Language.CaseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+            if (!isKeyword && document.Language.Id is not ("css" or "scss" or "less")) return null;
+            return KeywordGuide.Explain(word.Text, document.Language.Id) is { } meaning ? $"{word.Text}: {meaning}" : null;
+        }
         if (sessions.TryGetValue(document, out var session) && WordAt(document.Editor.Text, at) != null)
         {
             Flush(document);
-            session.Hover(at, Present);
+            session.Hover(at, info => Present(info ?? Guide()));
         }
         else
         {
-            Present(DotNetIntelliSense.Supports(document.Language.Id) && SymbolsFor(document) is { } symbols
-                ? DotNetIntelliSense.Hover(document.Editor.Text, at, document.Language.Id, symbols) : null);
+            Present((DotNetIntelliSense.Supports(document.Language.Id) && SymbolsFor(document) is { } symbols
+                ? DotNetIntelliSense.Hover(document.Editor.Text, at, document.Language.Id, symbols) : null) ?? Guide());
         }
     }
 
@@ -694,15 +816,75 @@ public sealed class IntelliSense
     }
 }
 
-/// <summary>A row in the completion list: a colored badge for the kind, the name, and its detail on the right.</summary>
-public sealed class CompletionItem(CompletionEntry entry) : ICompletionData
+/// <summary>
+/// A row in the completion list: a colored badge for the kind, the name, and its detail on the right. Selected, it explains
+/// itself beside the list: the server's documentation, what a keyword or built-in function means, or a snippet's text.
+/// </summary>
+public sealed class CompletionItem(CompletionEntry entry, string languageId, int recency) : ICompletionData
 {
-    public bool IsSnippet => entry.Snippet != null;
+    /// <summary>Asks the language server for the item's documentation (completionItem/resolve).</summary>
+    public Action<CompletionEntry, Action<string?, string?>>? Resolve { get; init; }
+    /// <summary>Called after the item is inserted.</summary>
+    public Action<CompletionEntry>? Picked { get; init; }
+
+    private string? resolvedDocumentation;
+    private string? resolvedDetail;
+    private bool resolving;
+    private TextBlock? shownDocumentation;
+
+    /// <summary>A code snippet from the snippet library (not a method a server offers with its arguments).</summary>
+    public bool IsSnippet => entry.Kind == 15 && entry.Snippet != null;
 
     public System.Windows.Media.ImageSource? Image => null;
     public string Text => entry.FilterText;
-    public double Priority => entry.Kind == 1 ? -1 : 0;
-    public object Description => entry.Detail.Length > 0 ? entry.Detail : (entry.Snippet != null ? "Snippet (Tab)" : entry.Label);
+    /// <summary>Of equally good matches, the list selects the one used most recently.</summary>
+    public double Priority => (entry.Kind == 1 ? -1 : 0) + recency / 1000.0;
+
+    public object Description
+    {
+        get
+        {
+            var detail = resolvedDetail ?? entry.Detail;
+            var panel = new StackPanel { MaxWidth = 420, Margin = new Thickness(2) };
+            var title = detail.Length > 0 && entry.Kind != 14 && detail != "Keyword" ? detail : entry.Label;
+            panel.Children.Add(new TextBlock
+            {
+                Text = title, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+            });
+            shownDocumentation = new TextBlock { Text = Explanation() ?? "", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), FontSize = 12 };
+            if (shownDocumentation.Text.Length == 0) shownDocumentation.Visibility = Visibility.Collapsed;
+            panel.Children.Add(shownDocumentation);
+            if (entry.Documentation == null && resolvedDocumentation == null && !resolving && Resolve != null && entry.Raw != null)
+            {
+                resolving = true;
+                Resolve(entry, (documentation, fuller) =>
+                {
+                    resolvedDocumentation = documentation ?? "";
+                    resolvedDetail = fuller;
+                    if (shownDocumentation is { } shown && documentation is { Length: > 0 })
+                    {
+                        shown.Text = Trim(documentation);
+                        shown.Visibility = Visibility.Visible;
+                    }
+                });
+            }
+            return panel;
+        }
+    }
+
+    /// <summary>What to say about the item beyond its signature.</summary>
+    private string? Explanation()
+    {
+        if (resolvedDocumentation is { Length: > 0 } resolved) return Trim(resolved);
+        if (entry.Documentation is { Length: > 0 } documentation) return Trim(documentation);
+        if (entry.Kind == 14 || entry.Detail == "Keyword") return KeywordGuide.Explain(entry.Label, languageId);
+        if (IsSnippet) return "Snippet: press Tab to insert it, then Tab to move between the parts to fill in.\n\n" + Trim(SnippetTemplate.PlainText(entry.Snippet!));
+        if (entry.Kind is 2 or 3 && BuiltInFunctions.Explain(languageId, entry.Label) is { } builtIn) return builtIn;
+        return null;
+    }
+
+    private static string Trim(string text) => text.Length > 900 ? text[..900].TrimEnd() + "…" : text;
 
     public object Content
     {
@@ -735,16 +917,19 @@ public sealed class CompletionItem(CompletionEntry entry) : ICompletionData
     public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
     {
         var document = textArea.Document;
-        if (entry.Snippet != null)
+        // Typing ( or . to accept keeps just the name: the ( that was typed follows it.
+        var typed = insertionRequestEventArgs is TextCompositionEventArgs;
+        if (entry.Snippet != null && !typed)
         {
-            var line = document.GetLineByOffset(completionSegment.Offset);
-            var indent = new string(document.GetText(line).TakeWhile(char.IsWhiteSpace).ToArray());
-            var (text, cursor) = new ToolboxItem(entry.Label, "", entry.Snippet).Expanded(indent);
-            document.Replace(completionSegment, text);
-            textArea.Caret.Offset = completionSegment.Offset + cursor;
-            return;
+            SnippetInsertion.Insert(textArea, completionSegment.Offset, completionSegment.Length, entry.Snippet);
         }
-        document.Replace(completionSegment, entry.Text);
+        else
+        {
+            var text = entry.Text;
+            if (typed && entry.Snippet != null && text.IndexOf('(') is > 0 and var paren) text = text[..paren];
+            document.Replace(completionSegment, text);
+        }
+        Picked?.Invoke(entry);
     }
 
     /// <summary>LSP CompletionItemKind → a letter and color, like Visual Studio's icons.</summary>
@@ -763,4 +948,105 @@ public sealed class CompletionItem(CompletionEntry entry) : ICompletionData
         1 => ("ab", "#95A5A6"),
         _ => ("•", "#95A5A6"),
     };
+}
+
+/// <summary>Parameter Info's contents: the overloads (Up and Down move between them), the current argument in bold, and what
+/// the function and that parameter are for.</summary>
+public sealed class SignatureProvider : IOverloadProvider
+{
+    private List<SignatureInfo> signatures;
+    private int selected;
+    private int argument;
+
+    public SignatureProvider(List<SignatureInfo> signatures, int active, int argument)
+    {
+        this.signatures = signatures;
+        this.argument = argument;
+        selected = Math.Clamp(active, 0, Math.Max(signatures.Count - 1, 0));
+    }
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
+    public void Update(List<SignatureInfo> newSignatures, int active, int newArgument)
+    {
+        signatures = newSignatures;
+        argument = newArgument;
+        selected = Math.Clamp(active, 0, Math.Max(signatures.Count - 1, 0));
+        Changed();
+    }
+
+    public int Count => signatures.Count;
+
+    public int SelectedIndex
+    {
+        get => selected;
+        set
+        {
+            selected = Math.Clamp(value, 0, Math.Max(signatures.Count - 1, 0));
+            Changed();
+        }
+    }
+
+    private void Changed()
+    {
+        foreach (var name in new[] { nameof(SelectedIndex), nameof(Count), nameof(CurrentIndexText), nameof(CurrentHeader), nameof(CurrentContent) })
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(name));
+    }
+
+    public string? CurrentIndexText => signatures.Count > 1 ? $"{selected + 1} of {signatures.Count}" : null;
+
+    private SignatureInfo Current => signatures[selected];
+
+    private int Parameter => ParameterInfo.ActiveParameter(Current, argument);
+
+    /// <summary>The signature as plain text, the current parameter in [brackets] (for scripts and screenshots).</summary>
+    public string Text
+    {
+        get
+        {
+            if (signatures.Count == 0) return "";
+            var label = Current.Label;
+            if (Parameter < 0) return label;
+            var (start, length) = Current.Parameters[Parameter];
+            return label[..start] + "[" + label.Substring(start, length) + "]" + label[(start + length)..];
+        }
+    }
+
+    public object CurrentHeader
+    {
+        get
+        {
+            var block = new TextBlock { FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12.5, TextWrapping = TextWrapping.Wrap };
+            if (signatures.Count == 0) return block;
+            var label = Current.Label;
+            var (start, length) = Parameter >= 0 ? Current.Parameters[Parameter] : (0, 0);
+            if (length == 0 || start + length > label.Length)
+            {
+                block.Text = label;
+                return block;
+            }
+            block.Inlines.Add(new System.Windows.Documents.Run(label[..start]));
+            block.Inlines.Add(new System.Windows.Documents.Run(label.Substring(start, length)) { FontWeight = FontWeights.Bold });
+            block.Inlines.Add(new System.Windows.Documents.Run(label[(start + length)..]));
+            return block;
+        }
+    }
+
+    public object CurrentContent
+    {
+        get
+        {
+            if (signatures.Count == 0) return "";
+            var lines = new List<string>();
+            if (Current.Documentation.Length > 0) lines.Add(Current.Documentation.Length > 600 ? Current.Documentation[..600] + "…" : Current.Documentation);
+            if (Parameter >= 0)
+            {
+                var (start, length) = Current.Parameters[Parameter];
+                var name = Current.Label.Substring(start, length);
+                var doc = Current.ParameterDocs is { } docs && Parameter < docs.Count ? docs[Parameter] : "";
+                if (doc.Length > 0) lines.Add(name + ": " + doc);
+            }
+            return lines.Count == 0 ? "" : new TextBlock { Text = string.Join("\n\n", lines), TextWrapping = TextWrapping.Wrap, MaxWidth = 600, FontSize = 12 };
+        }
+    }
 }

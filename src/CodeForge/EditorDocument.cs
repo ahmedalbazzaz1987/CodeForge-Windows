@@ -209,7 +209,7 @@ public sealed class EditorDocument
 
     public IEnumerable<string> CodeLensTexts => codeLens.Texts;
 
-    public string? DiagnosticAt(int offset) => diagnostics.MessageAt(offset);
+    public string? DiagnosticAt(int offset) => diagnostics.MessageAt(offset, Language.Id);
 
     public void Detach() => Themes.Changed -= ApplyTheme;
 
@@ -299,12 +299,56 @@ public sealed class EditorDocument
         var start = end;
         while (start > 0 && (char.IsLetterOrDigit(document.GetCharAt(start - 1)) || document.GetCharAt(start - 1) == '_')) start--;
         if (start == end || Snippets.Find(Language.Id, document.GetText(start, end - start)) is not { } snippet) return false;
-        var line = document.GetLineByOffset(start);
-        var indent = new string(document.GetText(line).TakeWhile(char.IsWhiteSpace).ToArray());
-        var (text, cursor) = snippet.ToolboxItem.Expanded(indent);
-        document.Replace(start, end - start, text);
-        Editor.CaretOffset = start + cursor;
+        SnippetInsertion.Insert(Editor.TextArea, start, end - start, snippet.Body);
         return true;
+    }
+}
+
+/// <summary>
+/// Inserts a snippet: one with fields (<c>${1:name}</c>) through AvalonEdit's snippets, so Tab and Shift+Tab move between the
+/// fields and copies of a field change with it (Enter or Esc finishes); one without, as text with the caret at <c>$0</c>.
+/// </summary>
+public static class SnippetInsertion
+{
+    public static void Insert(TextArea area, int start, int length, string body)
+    {
+        var document = area.Document;
+        if (!SnippetTemplate.HasFields(body))
+        {
+            var line = document.GetLineByOffset(start);
+            var indent = new string(document.GetText(line).TakeWhile(c => c is ' ' or '\t').ToArray());
+            var (text, cursor) = new ToolboxItem("", "", body).Expanded(indent);
+            document.Replace(start, length, text);
+            area.Caret.Offset = start + cursor;
+            return;
+        }
+        var snippet = new ICSharpCode.AvalonEdit.Snippets.Snippet();
+        var fields = new Dictionary<int, ICSharpCode.AvalonEdit.Snippets.SnippetReplaceableTextElement>();
+        foreach (var part in SnippetTemplate.Parse(body))
+        {
+            if (!part.IsField)
+                snippet.Elements.Add(new ICSharpCode.AvalonEdit.Snippets.SnippetTextElement { Text = part.Text });
+            else if (part.Index == 0)
+            {
+                snippet.Elements.Add(new ICSharpCode.AvalonEdit.Snippets.SnippetCaretElement());
+                if (part.Text.Length > 0) snippet.Elements.Add(new ICSharpCode.AvalonEdit.Snippets.SnippetTextElement { Text = part.Text });
+            }
+            else if (fields.TryGetValue(part.Index, out var target))
+                snippet.Elements.Add(new ICSharpCode.AvalonEdit.Snippets.SnippetBoundElement { TargetElement = target });
+            else
+            {
+                var field = new ICSharpCode.AvalonEdit.Snippets.SnippetReplaceableTextElement { Text = part.Text };
+                fields[part.Index] = field;
+                snippet.Elements.Add(field);
+            }
+        }
+        using (document.RunUpdate())
+        {
+            document.Remove(start, length);
+            area.Caret.Offset = start;
+            area.ClearSelection();
+            snippet.Insert(area);
+        }
     }
 }
 
@@ -335,7 +379,7 @@ public sealed class BookmarkRenderer(List<TextAnchor> bookmarks) : IBackgroundRe
 /// <summary>Draws a wavy underline (red for errors, yellow for warnings) under the problems from the last build.</summary>
 public sealed class DiagnosticRenderer(TextEditor editor) : IBackgroundRenderer
 {
-    private readonly List<(TextSegment Segment, Severity Severity, string Message)> marks = [];
+    private readonly List<(TextSegment Segment, Severity Severity, string Message, string? Code)> marks = [];
 
     public KnownLayer Layer => KnownLayer.Selection;
 
@@ -367,7 +411,7 @@ public sealed class DiagnosticRenderer(TextEditor editor) : IBackgroundRenderer
             {
                 while (start < end && char.IsWhiteSpace(document.GetCharAt(start))) start++;
             }
-            if (end > start) marks.Add((new TextSegment { StartOffset = start, EndOffset = end }, diagnostic.Severity, diagnostic.Message));
+            if (end > start) marks.Add((new TextSegment { StartOffset = start, EndOffset = end }, diagnostic.Severity, diagnostic.Message, diagnostic.Code));
         }
         editor.TextArea.TextView.InvalidateLayer(Layer);
     }
@@ -379,10 +423,12 @@ public sealed class DiagnosticRenderer(TextEditor editor) : IBackgroundRenderer
         editor.TextArea.TextView.InvalidateLayer(Layer);
     }
 
-    public string? MessageAt(int offset)
+    /// <summary>The problems at an offset, each with a plain-language explanation when there is one.</summary>
+    public string? MessageAt(int offset, string languageId)
     {
         var found = marks.Where(m => offset >= m.Segment.StartOffset && offset <= m.Segment.EndOffset)
-                         .Select(m => (m.Severity == Severity.Error ? "Error: " : "Warning: ") + m.Message).ToList();
+                         .Select(m => (m.Severity == Severity.Error ? "Error: " : "Warning: ") + m.Message +
+                                      (ErrorExplanations.Explain(m.Message, m.Code, languageId) is { } why ? "\n💡 " + why : "")).ToList();
         return found.Count == 0 ? null : string.Join("\n", found);
     }
 

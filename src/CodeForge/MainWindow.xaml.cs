@@ -206,6 +206,7 @@ public partial class MainWindow : Window
             SubMenu("_IntelliSense",
                 Item("_List Members", () => intelliSense.Complete(Current), "Ctrl+J", HasDocument),
                 Item("Complete _Word", () => intelliSense.Complete(Current), "Ctrl+Space", HasDocument),
+                Item("_Parameter Info", () => intelliSense.ShowParameterInfo(Current), "Ctrl+Shift+Space", HasDocument),
                 Item("_Quick Info", () => intelliSense.ShowQuickInfo(Current), "Ctrl+Shift+I", HasDocument),
                 Line(),
                 Item("_Install Language Server for This File…", () => intelliSense.Install(Current), "", HasDocument)),
@@ -400,6 +401,13 @@ public partial class MainWindow : Window
         ErrorList.MouseDoubleClick += (_, _) =>
         {
             if (ErrorList.SelectedItem is ErrorRow row) OpenPath(row.FullPath, row.Diagnostic.Line, row.Diagnostic.Column);
+        };
+        // The selected error, explained in plain words under the list.
+        ErrorList.SelectionChanged += (_, _) =>
+        {
+            var explanation = (ErrorList.SelectedItem as ErrorRow)?.Explanation;
+            ErrorExplanation.Text = explanation != null ? "💡 " + explanation : "";
+            ErrorExplanationBar.Visibility = explanation != null ? Visibility.Visible : Visibility.Collapsed;
         };
 
         ExplorerOpenFolder.Click += (_, _) => OpenFolder();
@@ -2306,8 +2314,8 @@ public partial class MainWindow : Window
                     $"STATUS: {StatusText.Text}\nTABS: {string.Join(",", documents.Select(d => d.DisplayName))}\nOUTPUT:\n{OutputText.Text}\n" +
                     $"SERVER: {(Current != null ? intelliSense.ServerName(Current) : null)}\n" +
                     $"QUERY: {QuerySummary.Text}\nSYMBOLS: {string.Join(",", classView.Symbols.Select(x => x.Name))}\n" +
-                    $"COMPLETION: {string.Join(",", intelliSense.CompletionLabels)}\nCODELENS: {string.Join(" / ", Current?.CodeLensTexts ?? Enumerable.Empty<string>())}\n" +
-                    $"ERRORS:\n{string.Join("\n", (ErrorList.ItemsSource as IEnumerable<ErrorRow> ?? Enumerable.Empty<ErrorRow>()).Select(r => $"{r.FileName}:{r.Line}: {r.Message}"))}\n" +
+                    $"COMPLETION: {string.Join(",", intelliSense.CompletionLabels)}\nPARAMINFO: {intelliSense.ParameterInfoText}\nCODELENS: {string.Join(" / ", Current?.CodeLensTexts ?? Enumerable.Empty<string>())}\n" +
+                    $"ERRORS:\n{string.Join("\n", (ErrorList.ItemsSource as IEnumerable<ErrorRow> ?? Enumerable.Empty<ErrorRow>()).Select(r => $"{r.FileName}:{r.Line}: {r.Message}" + (r.Explanation != null ? " | " + r.Explanation : "")))}\n" +
                     $"FINDRESULTS:\n{string.Join("\n", (FindResults.ItemsSource as IEnumerable<LocationRow> ?? Enumerable.Empty<LocationRow>()).Select(r => $"{Path.GetFileName(r.FullPath)}:{r.Line}"))}\n" +
                     $"DEBUG: {debugSession?.State} {debugSession?.Configuration.AdapterId} at {selectedFrame?.Name}:{selectedFrame?.Line}\n" +
                     $"PROPERTIES: {properties.Heading}\n" +
@@ -2337,6 +2345,7 @@ public partial class MainWindow : Window
             case "definition": intelliSense.GoToDefinition(Current); break;
             case "references": intelliSense.FindAllReferences(Current); break;
             case "quickinfo": intelliSense.ShowQuickInfo(Current); break;
+            case "paraminfo": intelliSense.ShowParameterInfo(Current); break;
             case var a when a.StartsWith("caret:") && Current is { } at:
                 // caret:text puts the caret just after the first "text" in the file.
                 var found = at.Editor.Text.IndexOf(a[6..], StringComparison.Ordinal);
